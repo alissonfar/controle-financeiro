@@ -6,14 +6,13 @@ const Transacoes = () => {
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
   const [data, setData] = useState('');
-  const [idParticipante, setIdParticipante] = useState('');
-  const [idConta, setIdConta] = useState('');
   const [metodoPagamento, setMetodoPagamento] = useState('');
   const [categoria, setCategoria] = useState('');
   const [status, setStatus] = useState('pendente');
   const [idEdicao, setIdEdicao] = useState(null);
 
   const [participantes, setParticipantes] = useState([]);
+  const [participantesSelecionados, setParticipantesSelecionados] = useState([]);
   const [contas, setContas] = useState([]);
   const [metodosPagamento, setMetodosPagamento] = useState([]);
 
@@ -45,7 +44,7 @@ const Transacoes = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!descricao || !valor || !data || !idParticipante || !idConta || !metodoPagamento || !categoria) {
+    if (!descricao || !valor || !data || participantesSelecionados.length === 0 || !metodoPagamento || !categoria) {
       alert('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
@@ -54,11 +53,10 @@ const Transacoes = () => {
       descricao,
       valor,
       data,
-      id_participante: idParticipante,
-      id_conta: idConta,
       metodo_pagamento: metodoPagamento,
       categoria,
       status,
+      participantes: participantesSelecionados,
     };
 
     try {
@@ -74,8 +72,7 @@ const Transacoes = () => {
       setDescricao('');
       setValor('');
       setData('');
-      setIdParticipante('');
-      setIdConta('');
+      setParticipantesSelecionados([]);
       setMetodoPagamento('');
       setCategoria('');
       setStatus('pendente');
@@ -96,11 +93,10 @@ const Transacoes = () => {
     setDescricao(transacao.descricao);
     setValor(transacao.valor);
     setData(transacao.data);
-    setIdParticipante(transacao.id_participante);
-    setIdConta(transacao.id_conta);
     setMetodoPagamento(transacao.metodo_pagamento);
     setCategoria(transacao.categoria);
     setStatus(transacao.status);
+    setParticipantesSelecionados(transacao.participantes || []);
   };
 
   // Excluir transação logicamente
@@ -125,11 +121,11 @@ const Transacoes = () => {
         {transacoes.map((transacao) => (
           <li
             key={transacao.id}
-            className="flex justify-between items-center p-2 border-b last:border-none"
+            className="flex flex-col p-4 border-b last:border-none"
           >
             <div>
               <p className="font-medium">{transacao.descricao}</p>
-              <p className="text-sm text-gray-500">Valor: R$ {transacao.valor}</p>
+              <p className="text-sm text-gray-500">Valor Total: R$ {transacao.valor}</p>
               <p className="text-sm text-gray-500">Data: {transacao.data}</p>
               <p className="text-sm text-gray-500">Categoria: {transacao.categoria}</p>
             </div>
@@ -185,36 +181,24 @@ const Transacoes = () => {
           />
         </div>
         <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Participante:</label>
-          <select
-            value={idParticipante}
-            onChange={(e) => setIdParticipante(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          >
-            <option value="">Selecione um participante</option>
-            {participantes.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nome}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Conta:</label>
-          <select
-            value={idConta}
-            onChange={(e) => setIdConta(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          >
-            <option value="">Selecione uma conta</option>
-            {contas.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+          <label className="block text-gray-700 font-medium">Participantes:</label>
+          {participantes.map((p) => (
+            <div key={p.id} className="flex items-center">
+              <input
+                type="checkbox"
+                value={p.id}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setParticipantesSelecionados([...participantesSelecionados, { id: p.id, usa_conta: p.usa_conta }]);
+                  } else {
+                    setParticipantesSelecionados(participantesSelecionados.filter((part) => part.id !== p.id));
+                  }
+                }}
+                className="mr-2"
+              />
+              <label>{p.nome}</label>
+            </div>
+          ))}
         </div>
         <div className="mb-4">
           <label className="block text-gray-700 font-medium">Método de Pagamento:</label>

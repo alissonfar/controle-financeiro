@@ -83,10 +83,19 @@ app.post('/contas', async (req, res) => {
 // Endpoint para listar todas as contas
 app.get('/contas', async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM contas WHERE ativo = TRUE');
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao buscar contas.', details: err.message });
+    const [contas] = await db.query(`
+      SELECT contas.*, GROUP_CONCAT(metodos_pagamento.nome) AS metodos_pagamento
+      FROM contas
+      LEFT JOIN contas_metodos_pagamento ON contas.id = contas_metodos_pagamento.id_conta
+      LEFT JOIN metodos_pagamento ON contas_metodos_pagamento.id_metodo_pagamento = metodos_pagamento.id
+      WHERE contas.ativo = 1
+      GROUP BY contas.id
+    `);
+
+    res.json(contas);
+  } catch (error) {
+    console.error('Erro ao listar contas:', error);
+    res.status(500).json({ error: 'Erro ao listar contas.' });
   }
 });
   
@@ -118,6 +127,31 @@ res.json({ message: 'Conta excluída logicamente!' });
 res.status(500).json({ error: 'Erro ao excluir conta.', details: err.message });
 }
 });
+
+
+// Endpoint para vincular métodos de pagamento a uma conta
+app.post('/contas/vincular-metodos', async (req, res) => {
+  const { id_conta, id_metodos_pagamento } = req.body; // `id_metodos_pagamento` deve ser um array de IDs
+
+  if (!id_conta || !Array.isArray(id_metodos_pagamento) || id_metodos_pagamento.length === 0) {
+      return res.status(400).json({ error: 'id_conta e um array de id_metodos_pagamento são obrigatórios.' });
+  }
+
+  try {
+      const queries = id_metodos_pagamento.map(id_metodo_pagamento => {
+          return db.query('INSERT INTO contas_metodos_pagamento (id_conta, id_metodo_pagamento) VALUES (?, ?)', [id_conta, id_metodo_pagamento]);
+      });
+
+      await Promise.all(queries); // Aguarda todas as inserções
+      res.status(201).json({ message: 'Métodos de pagamento vinculados com sucesso.' });
+  } catch (error) {
+      console.error('Erro ao vincular métodos de pagamento:', error);
+      res.status(500).json({ error: 'Erro ao vincular métodos de pagamento.' });
+  }
+});
+
+
+
       
 
 
@@ -125,12 +159,26 @@ res.status(500).json({ error: 'Erro ao excluir conta.', details: err.message });
 // Listar participantes
 app.get('/participantes', async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM participantes WHERE ativo = TRUE');
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao buscar participantes.', details: err.message });
+      const [participantes] = await db.query(`
+          SELECT 
+              p.id, 
+              p.nome, 
+              p.descricao, 
+              p.usa_conta,
+              GROUP_CONCAT(c.nome SEPARATOR ', ') AS contas_vinculadas
+          FROM participantes p
+          LEFT JOIN participantes_contas pc ON p.id = pc.id_participante
+          LEFT JOIN contas c ON pc.id_conta = c.id
+          WHERE p.ativo = 1
+          GROUP BY p.id
+      `);
+      res.json(participantes);
+  } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar participantes.' });
   }
 });
+
+
   
 // Criar participante
 app.post('/participantes', async (req, res) => {
@@ -189,17 +237,72 @@ app.get('/transacoes', async (req, res) => {
 
 // Criar transação
 app.post('/transacoes', async (req, res) => {
-  const { descricao, valor, data, id_participante, id_conta, metodo_pagamento, categoria, status } = req.body;
+  const { descricao, valor, data, metodo_pagamento, categoria, status, participantes } = req.body;
+
+  if (!descricao || !valor || !data || !metodo_pagamento || !categoria || !participantes || participantes.length === 0) {
+    return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos.' });
+  }
+
+  const connection = db.promise();
+  const transaction = await connection.getConnection(); // Cria uma transação para segurança
+
   try {
-    const [result] = await db.query(
-      'INSERT INTO transacoes (descricao, valor, data, id_participante, id_conta, metodo_pagamento, categoria, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [descricao, valor, data, id_participante, id_conta, metodo_pagamento, categoria, status]
+    await transaction.beginTransaction();
+
+    // Criar a transação principal
+    const [result] = await transaction.query(
+      'INSERT INTO transacoes (descricao, valor, data, metodo_pagamento, categoria, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [descricao, valor, data, metodo_pagamento, categoria, status]
     );
-    res.status(201).json({ message: 'Transação criada com sucesso!', id: result.insertId });
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao criar transação.', details: err.message });
+
+    const transacaoId = result.insertId;
+
+    // Processar participantes
+    for (const participante of participantes) {
+      const { id, usa_conta } = participante;
+      const valorIndividual = valor / participantes.length;
+
+      // Registrar no histórico de participantes da transação
+      await transaction.query(
+        'INSERT INTO transacoes_participantes (id_transacao, id_participante, valor) VALUES (?, ?, ?)',
+        [transacaoId, id, valorIndividual]
+      );
+
+      // Se o participante usa conta, debitar o valor
+      if (usa_conta) {
+        const [contas] = await transaction.query(
+          'SELECT * FROM contas WHERE id_participante = ? AND ativo = TRUE',
+          [id]
+        );
+
+        if (contas.length === 0) {
+          throw new Error(`Nenhuma conta vinculada encontrada para o participante ID: ${id}`);
+        }
+
+        // Debitar da conta principal do participante
+        const conta = contas[0];
+        if (conta.saldo_atual < valorIndividual) {
+          throw new Error(`Saldo insuficiente na conta: ${conta.nome}`);
+        }
+
+        await transaction.query(
+          'UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id = ?',
+          [valorIndividual, conta.id]
+        );
+      }
+    }
+
+    await transaction.commit();
+    res.status(201).json({ message: 'Transação criada com sucesso!' });
+  } catch (error) {
+    await transaction.rollback();
+    console.error('Erro ao criar transação:', error);
+    res.status(500).json({ error: 'Erro ao criar transação.' });
+  } finally {
+    transaction.release();
   }
 });
+
 
 
 // Atualizar transação
@@ -227,6 +330,109 @@ app.delete('/transacoes/:id', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Erro ao excluir transação.', details: err.message });
   }
+});
+
+
+
+
+
+app.get('/transacoes/:id/participantes', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT tp.id, p.nome, tp.valor 
+       FROM transacoes_participantes tp
+       JOIN participantes p ON tp.id_participante = p.id
+       WHERE tp.id_transacao = ?`,
+      [id]
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar participantes da transação:', error);
+    res.status(500).json({ error: 'Erro ao buscar participantes da transação.' });
+  }
+});
+
+// Vincular contas a um participante
+// Vincular contas a um participante
+app.post('/participantes/:id/contas', async (req, res) => {
+  let { id } = req.params;
+  const { contas } = req.body;
+
+  // Convertendo o id para inteiro
+  id = parseInt(id, 10);
+
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'O ID do participante deve ser um número válido.' });
+  }
+
+  if (!contas || !Array.isArray(contas) || contas.length === 0) {
+    return res.status(400).json({ error: 'É necessário fornecer uma lista de IDs de contas.' });
+  }
+
+  try {
+    for (const contaId of contas) {
+      const [existingLink] = await db.query(
+        'SELECT * FROM participantes_contas WHERE id_participante = ? AND id_conta = ? AND ativo = TRUE',
+        [id, contaId]
+      );
+
+      if (!existingLink.length) {
+        await db.query(
+          'INSERT INTO participantes_contas (id_participante, id_conta) VALUES (?, ?)',
+          [id, contaId]
+        );
+      }
+    }
+
+    res.status(201).json({ message: 'Contas vinculadas ao participante com sucesso!' });
+  } catch (error) {
+    console.error('Erro ao vincular contas ao participante:', error);
+    res.status(500).json({ error: 'Erro ao vincular contas ao participante.' });
+  }
+});
+
+
+
+
+app.get('/participantes/:id/contas', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT c.id, c.nome, c.saldo_atual 
+       FROM participantes_contas pc
+       JOIN contas c ON pc.id_conta = c.id
+       WHERE pc.id_participante = ? AND pc.ativo = TRUE`,
+      [id]
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar contas vinculadas ao participante:', error);
+    res.status(500).json({ error: 'Erro ao buscar contas vinculadas ao participante.' });
+  }
+});
+
+
+
+
+
+
+const validarTransacao = (req, res, next) => {
+  const { descricao, valor, participantes } = req.body;
+
+  if (!descricao || !valor || !Array.isArray(participantes) || participantes.length === 0) {
+    return res.status(400).json({ error: 'Campos obrigatórios faltando.' });
+  }
+
+  next();
+};
+
+app.post('/transacoes', validarTransacao, async (req, res) => {
+  // Código principal do endpoint
 });
 
 

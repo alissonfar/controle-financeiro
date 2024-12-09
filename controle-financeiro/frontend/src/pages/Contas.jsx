@@ -6,48 +6,60 @@ const Contas = () => {
   const [nome, setNome] = useState('');
   const [saldoInicial, setSaldoInicial] = useState('');
   const [saldoAtual, setSaldoAtual] = useState('');
-  const [metodosPagamento, setMetodosPagamento] = useState('');
+  const [metodosDisponiveis, setMetodosDisponiveis] = useState([]);
+  const [metodosSelecionados, setMetodosSelecionados] = useState([]);
   const [idEdicao, setIdEdicao] = useState(null);
 
+  // Buscar dados iniciais
   useEffect(() => {
-    const fetchContas = async () => {
+    const fetchDados = async () => {
       try {
-        const response = await api.get('/contas');
-        setContas(response.data);
+        const contasResponse = await api.get('/contas');
+        setContas(contasResponse.data);
+
+        const metodosResponse = await api.get('/metodos_pagamento');
+        setMetodosDisponiveis(metodosResponse.data);
       } catch (error) {
-        console.error('Erro ao buscar contas:', error);
+        console.error('Erro ao buscar dados:', error);
+        alert('Erro ao carregar contas ou métodos de pagamento.');
       }
     };
 
-    fetchContas();
+    fetchDados();
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     try {
+      const conta = {
+        nome,
+        saldo_inicial: saldoInicial,
+        saldo_atual: saldoAtual,
+      };
+
+      let response;
       if (idEdicao) {
-        await api.put(`/contas/${idEdicao}`, {
-          nome,
-          saldo_atual: saldoAtual,
-          metodos_pagamento: metodosPagamento,
-        });
-        alert('Conta atualizada com sucesso!');
+        response = await api.put(`/contas/${idEdicao}`, conta);
       } else {
-        await api.post('/contas', {
-          nome,
-          saldo_inicial: saldoInicial,
-          saldo_atual: saldoAtual,
-          metodos_pagamento: metodosPagamento,
-        });
-        alert('Conta criada com sucesso!');
+        response = await api.post('/contas', conta);
       }
+
+      // Vincular métodos de pagamento à conta
+      await api.post('/contas/vincular-metodos', {
+        id_conta: response.data.id || idEdicao,
+        metodos_pagamento: metodosSelecionados,
+      });
+
+      alert('Conta salva com sucesso!');
       setNome('');
       setSaldoInicial('');
       setSaldoAtual('');
-      setMetodosPagamento('');
+      setMetodosSelecionados([]);
       setIdEdicao(null);
-      const response = await api.get('/contas');
-      setContas(response.data);
+
+      const contasResponse = await api.get('/contas');
+      setContas(contasResponse.data);
     } catch (error) {
       console.error('Erro ao salvar conta:', error);
       alert('Erro ao salvar conta.');
@@ -59,7 +71,7 @@ const Contas = () => {
     setNome(conta.nome);
     setSaldoInicial(conta.saldo_inicial);
     setSaldoAtual(conta.saldo_atual);
-    setMetodosPagamento(conta.metodos_pagamento);
+    setMetodosSelecionados(conta.metodos_pagamento ? conta.metodos_pagamento.split(',').map((m) => m.trim()) : []);
   };
 
   const handleDelete = async (id) => {
@@ -67,8 +79,8 @@ const Contas = () => {
       try {
         await api.delete(`/contas/${id}`);
         alert('Conta excluída com sucesso!');
-        const response = await api.get('/contas');
-        setContas(response.data);
+        const contasResponse = await api.get('/contas');
+        setContas(contasResponse.data);
       } catch (error) {
         console.error('Erro ao excluir conta:', error);
         alert('Erro ao excluir conta.');
@@ -88,7 +100,7 @@ const Contas = () => {
             <div>
               <p className="font-medium">{conta.nome}</p>
               <p className="text-sm text-gray-500">Saldo Atual: R$ {conta.saldo_atual}</p>
-              <p className="text-sm text-gray-500">Métodos: {conta.metodos_pagamento}</p>
+              <p className="text-sm text-gray-500">Métodos: {conta.metodos_pagamento || 'Nenhum'}</p>
             </div>
             <div>
               <button
@@ -151,12 +163,20 @@ const Contas = () => {
         </div>
         <div className="mb-4">
           <label className="block text-gray-700 font-medium">Métodos de Pagamento:</label>
-          <input
-            type="text"
-            value={metodosPagamento}
-            onChange={(e) => setMetodosPagamento(e.target.value)}
+          <select
+            multiple
+            value={metodosSelecionados}
+            onChange={(e) =>
+              setMetodosSelecionados(Array.from(e.target.selectedOptions, (option) => option.value))
+            }
             className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-          />
+          >
+            {metodosDisponiveis.map((metodo) => (
+              <option key={metodo.id} value={metodo.id}>
+                {metodo.nome}
+              </option>
+            ))}
+          </select>
         </div>
         <button
           type="submit"
