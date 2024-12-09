@@ -28,43 +28,61 @@ const Contas = () => {
     fetchDados();
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
 
-    try {
-      const conta = {
-        nome,
-        saldo_inicial: saldoInicial,
-        saldo_atual: saldoAtual,
-      };
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-      let response;
-      if (idEdicao) {
-        response = await api.put(`/contas/${idEdicao}`, conta);
-      } else {
-        response = await api.post('/contas', conta);
-      }
+  try {
+    const conta = {
+      nome,
+      saldo_inicial: idEdicao ? undefined : parseFloat(saldoInicial),
+      saldo_atual: parseFloat(saldoAtual),
+    };
 
-      // Vincular métodos de pagamento à conta
+    console.log('Dados enviados para criar/atualizar conta:', conta);
+    console.log('Métodos disponíveis:', metodosDisponiveis);
+    console.log('Métodos selecionados antes da conversão:', metodosSelecionados);
+
+    // Convertendo métodos selecionados para IDs
+    const metodosPagamentoIds = metodosSelecionados.map((id) => parseInt(id, 10));
+
+    
+
+    console.log('Métodos de pagamento IDs enviados:', metodosPagamentoIds);
+
+    let response;
+    if (idEdicao) {
+      response = await api.put(`/contas/${idEdicao}`, conta);
+    } else {
+      response = await api.post('/contas', conta);
+    }
+
+    if (metodosPagamentoIds.length > 0) {
       await api.post('/contas/vincular-metodos', {
         id_conta: response.data.id || idEdicao,
-        metodos_pagamento: metodosSelecionados,
+        id_metodos_pagamento: metodosPagamentoIds,
       });
-
-      alert('Conta salva com sucesso!');
-      setNome('');
-      setSaldoInicial('');
-      setSaldoAtual('');
-      setMetodosSelecionados([]);
-      setIdEdicao(null);
-
-      const contasResponse = await api.get('/contas');
-      setContas(contasResponse.data);
-    } catch (error) {
-      console.error('Erro ao salvar conta:', error);
-      alert('Erro ao salvar conta.');
     }
-  };
+
+    alert('Conta salva com sucesso!');
+    setNome('');
+    setSaldoInicial('');
+    setSaldoAtual('');
+    setMetodosSelecionados([]);
+    setIdEdicao(null);
+
+    const contasResponse = await api.get('/contas');
+    setContas(contasResponse.data);
+  } catch (error) {
+    console.error('Erro ao salvar conta:', error.response?.data || error.message);
+    alert('Erro ao salvar conta.');
+  }
+};
+
+  
+  
+  
+  
 
   const handleEdit = (conta) => {
     setIdEdicao(conta.id);

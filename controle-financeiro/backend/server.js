@@ -67,17 +67,27 @@ app.delete('/usuarios/:id', async (req, res) => {
 
 // Endpoint para criar uma nova conta
 app.post('/contas', async (req, res) => {
-  const { nome, saldo_inicial, saldo_atual, metodos_pagamento } = req.body;
+  const { nome, saldo_inicial, saldo_atual } = req.body;
+
+  console.log('Dados recebidos no backend para criar conta:', req.body);
+
+  if (!nome || saldo_inicial === undefined || saldo_atual === undefined) {
+    return res.status(400).json({ error: 'Nome, saldo inicial e saldo atual são obrigatórios.' });
+  }
+
   try {
     const [result] = await db.query(
-      'INSERT INTO contas (nome, saldo_inicial, saldo_atual, metodos_pagamento) VALUES (?, ?, ?, ?)',
-      [nome, saldo_inicial, saldo_atual, metodos_pagamento]
+      'INSERT INTO contas (nome, saldo_inicial, saldo_atual) VALUES (?, ?, ?)',
+      [nome, saldo_inicial, saldo_atual]
     );
     res.status(201).json({ message: 'Conta criada com sucesso!', id: result.insertId });
   } catch (err) {
+    console.error('Erro ao criar conta:', err);
     res.status(500).json({ error: 'Erro ao criar conta.', details: err.message });
   }
 });
+
+
 
 
 // Endpoint para listar todas as contas
@@ -103,18 +113,27 @@ app.get('/contas', async (req, res) => {
 
 // Endpoint para atualizar uma conta
 app.put('/contas/:id', async (req, res) => {
-const { id } = req.params;
-const { nome, saldo_atual, metodos_pagamento } = req.body;
-try {
-  await db.query(
-    'UPDATE contas SET nome = ?, saldo_atual = ?, metodos_pagamento = ? WHERE id = ? AND ativo = TRUE',
-    [nome, saldo_atual, metodos_pagamento, id]
-  );
-  res.json({ message: 'Conta atualizada com sucesso!' });
-} catch (err) {
-  res.status(500).json({ error: 'Erro ao atualizar conta.', details: err.message });
-}
+  const { id } = req.params;
+  const { nome, saldo_atual } = req.body;
+
+  console.log('Dados recebidos para atualizar conta (Payload):', req.body);
+
+  if (!nome || saldo_atual === undefined) {
+    return res.status(400).json({ error: 'Nome e saldo atual são obrigatórios.' });
+  }
+
+  try {
+    await db.query(
+      'UPDATE contas SET nome = ?, saldo_atual = ? WHERE id = ? AND ativo = TRUE',
+      [nome, saldo_atual, id]
+    );
+    res.json({ message: 'Conta atualizada com sucesso!' });
+  } catch (err) {
+    console.error('Erro ao atualizar conta:', err);
+    res.status(500).json({ error: 'Erro ao atualizar conta.', details: err.message });
+  }
 });
+
     
 
 // Endpoint para exclusão lógica de uma conta
@@ -131,24 +150,27 @@ res.status(500).json({ error: 'Erro ao excluir conta.', details: err.message });
 
 // Endpoint para vincular métodos de pagamento a uma conta
 app.post('/contas/vincular-metodos', async (req, res) => {
-  const { id_conta, id_metodos_pagamento } = req.body; // `id_metodos_pagamento` deve ser um array de IDs
+  const { id_conta, id_metodos_pagamento } = req.body;
+
+  console.log('Payload recebido no backend:', req.body);
 
   if (!id_conta || !Array.isArray(id_metodos_pagamento) || id_metodos_pagamento.length === 0) {
-      return res.status(400).json({ error: 'id_conta e um array de id_metodos_pagamento são obrigatórios.' });
+    return res.status(400).json({ error: 'id_conta e um array de id_metodos_pagamento são obrigatórios.' });
   }
 
   try {
-      const queries = id_metodos_pagamento.map(id_metodo_pagamento => {
-          return db.query('INSERT INTO contas_metodos_pagamento (id_conta, id_metodo_pagamento) VALUES (?, ?)', [id_conta, id_metodo_pagamento]);
-      });
+    const queries = id_metodos_pagamento.map((id_metodo_pagamento) => {
+      return db.query('INSERT INTO contas_metodos_pagamento (id_conta, id_metodo_pagamento) VALUES (?, ?)', [id_conta, id_metodo_pagamento]);
+    });
 
-      await Promise.all(queries); // Aguarda todas as inserções
-      res.status(201).json({ message: 'Métodos de pagamento vinculados com sucesso.' });
+    await Promise.all(queries);
+    res.status(201).json({ message: 'Métodos de pagamento vinculados com sucesso.' });
   } catch (error) {
-      console.error('Erro ao vincular métodos de pagamento:', error);
-      res.status(500).json({ error: 'Erro ao vincular métodos de pagamento.' });
+    console.error('Erro ao vincular métodos de pagamento:', error);
+    res.status(500).json({ error: 'Erro ao vincular métodos de pagamento.' });
   }
 });
+
 
 
 
