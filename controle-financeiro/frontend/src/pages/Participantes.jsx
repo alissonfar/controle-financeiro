@@ -10,8 +10,7 @@ const Participantes = () => {
 
   const [contasDisponiveis, setContasDisponiveis] = useState([]);
   const [contasParaVincular, setContasParaVincular] = useState([]);
-  const [idParticipanteSelecionado, setIdParticipanteSelecionado] = useState(null);
-  const [contasVinculadas, setContasVinculadas] = useState([]);
+  const [contasOriginais, setContasOriginais] = useState([]);
 
   // Buscar participantes e contas disponíveis
   useEffect(() => {
@@ -33,13 +32,18 @@ const Participantes = () => {
 
   const fetchContasVinculadas = async (idParticipante) => {
     try {
+      console.log('Buscando contas vinculadas para o participante ID:', idParticipante);
       const response = await api.get(`/participantes/${idParticipante}/contas`);
-      setContasVinculadas(response.data);
+      const contasIds = response.data.map((conta) => conta.id.toString());
+      setContasParaVincular(contasIds);
+      setContasOriginais(contasIds);
+      console.log('Contas ativas vinculadas carregadas:', contasIds);
     } catch (error) {
       console.error('Erro ao buscar contas vinculadas:', error);
       alert('Erro ao carregar contas vinculadas.');
     }
   };
+  
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -50,17 +54,26 @@ const Participantes = () => {
       if (idEdicao) {
         await api.put(`/participantes/${idEdicao}`, payload);
         participanteId = idEdicao;
+        console.log('Participante atualizado:', payload);
         alert('Participante atualizado com sucesso!');
       } else {
         const response = await api.post('/participantes', payload);
         participanteId = response.data.id;
+        console.log('Participante criado:', payload);
         alert('Participante criado com sucesso!');
       }
 
-      // Vincular contas somente se a flag "Usa Conta" estiver ativada
-      if (usaConta && contasParaVincular.length > 0) {
-        await api.post(`/participantes/${participanteId}/contas`, { contas: contasParaVincular });
-        alert('Contas vinculadas com sucesso!');
+      // Atualizar vinculação de contas somente se a flag "Usa Conta" estiver ativada
+      if (usaConta) {
+        if (contasParaVincular.sort().toString() !== contasOriginais.sort().toString()) {
+          console.log('Atualizando vinculação de contas. Contas novas:', contasParaVincular);
+          await api.post(`/participantes/${participanteId}/contas`, {
+            contas: contasParaVincular,
+          });
+          alert('Contas vinculadas com sucesso!');
+        } else {
+          console.log('Nenhuma alteração detectada nas contas vinculadas.');
+        }
       }
 
       setNome('');
@@ -68,6 +81,8 @@ const Participantes = () => {
       setUsaConta(false);
       setIdEdicao(null);
       setContasParaVincular([]);
+      setContasOriginais([]);
+
       const response = await api.get('/participantes');
       setParticipantes(response.data);
     } catch (error) {
@@ -81,8 +96,14 @@ const Participantes = () => {
     setNome(participante.nome);
     setDescricao(participante.descricao);
     setUsaConta(participante.usa_conta);
-    setIdParticipanteSelecionado(participante.id);
-    fetchContasVinculadas(participante.id);
+
+    // Buscar contas vinculadas para edição
+    if (participante.usa_conta) {
+      fetchContasVinculadas(participante.id);
+    } else {
+      setContasParaVincular([]);
+      setContasOriginais([]);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -103,41 +124,40 @@ const Participantes = () => {
     <div className="p-6 bg-gray-100 min-h-screen">
       <h1 className="text-2xl font-bold mb-4">Lista de Participantes</h1>
       <ul className="bg-white shadow-md rounded-lg p-4">
-      {participantes.map((participante) => (
-        <li
-          key={participante.id}
-          className="flex justify-between items-center p-2 border-b last:border-none"
-        >
-          <div>
-            <p className="font-medium">{participante.nome}</p>
-            <p className="text-sm text-gray-500">{participante.descricao}</p>
-            <p className="text-sm text-gray-500">
-              Usa Conta: {participante.usa_conta ? 'Sim' : 'Não'}
-            </p>
-            {participante.contas_vinculadas && (
+        {participantes.map((participante) => (
+          <li
+            key={participante.id}
+            className="flex justify-between items-center p-2 border-b last:border-none"
+          >
+            <div>
+              <p className="font-medium">{participante.nome}</p>
+              <p className="text-sm text-gray-500">{participante.descricao}</p>
               <p className="text-sm text-gray-500">
-                Contas Vinculadas: {participante.contas_vinculadas}
+                Usa Conta: {participante.usa_conta ? 'Sim' : 'Não'}
               </p>
-            )}
-          </div>
-          <div>
-            <button
-              className="bg-blue-500 text-white px-3 py-1 rounded-lg mr-2 hover:bg-blue-600"
-              onClick={() => handleEdit(participante)}
-            >
-              Editar
-            </button>
-            <button
-              className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600"
-              onClick={() => handleDelete(participante.id)}
-            >
-              Excluir
-            </button>
-          </div>
-        </li>
+              {participante.contas_vinculadas && (
+                <p className="text-sm text-gray-500">
+                  Contas Vinculadas: {participante.contas_vinculadas}
+                </p>
+              )}
+            </div>
+            <div>
+              <button
+                className="bg-blue-500 text-white px-3 py-1 rounded-lg mr-2 hover:bg-blue-600"
+                onClick={() => handleEdit(participante)}
+              >
+                Editar
+              </button>
+              <button
+                className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600"
+                onClick={() => handleDelete(participante.id)}
+              >
+                Excluir
+              </button>
+            </div>
+          </li>
         ))}
       </ul>
-
 
       <h2 className="text-xl font-semibold mt-6">
         {idEdicao ? 'Editar Participante' : 'Adicionar Novo Participante'}

@@ -214,24 +214,27 @@ app.post('/contas/vincular-metodos', async (req, res) => {
 // Listar participantes
 app.get('/participantes', async (req, res) => {
   try {
-      const [participantes] = await db.query(`
-          SELECT 
-              p.id, 
-              p.nome, 
-              p.descricao, 
-              p.usa_conta,
-              GROUP_CONCAT(c.nome SEPARATOR ', ') AS contas_vinculadas
-          FROM participantes p
-          LEFT JOIN participantes_contas pc ON p.id = pc.id_participante
-          LEFT JOIN contas c ON pc.id_conta = c.id
-          WHERE p.ativo = 1
-          GROUP BY p.id
-      `);
-      res.json(participantes);
+    const [participantes] = await db.query(`
+      SELECT 
+        p.id, 
+        p.nome, 
+        p.descricao, 
+        p.usa_conta,
+        GROUP_CONCAT(c.nome SEPARATOR ', ') AS contas_vinculadas
+      FROM participantes p
+      LEFT JOIN participantes_contas pc ON p.id = pc.id_participante AND pc.ativo = 1
+      LEFT JOIN contas c ON pc.id_conta = c.id
+      WHERE p.ativo = 1
+      GROUP BY p.id
+    `);
+
+    res.json(participantes);
   } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar participantes.' });
+    console.error('Erro ao listar participantes:', error);
+    res.status(500).json({ error: 'Erro ao listar participantes.' });
   }
 });
+
 
 
   
@@ -410,7 +413,7 @@ app.get('/transacoes/:id/participantes', async (req, res) => {
   }
 });
 
-// Vincular contas a um participante
+
 // Vincular contas a um participante
 app.post('/participantes/:id/contas', async (req, res) => {
   let { id } = req.params;
@@ -423,23 +426,24 @@ app.post('/participantes/:id/contas', async (req, res) => {
     return res.status(400).json({ error: 'O ID do participante deve ser um número válido.' });
   }
 
-  if (!contas || !Array.isArray(contas) || contas.length === 0) {
+  if (!contas || !Array.isArray(contas)) {
     return res.status(400).json({ error: 'É necessário fornecer uma lista de IDs de contas.' });
   }
 
   try {
-    for (const contaId of contas) {
-      const [existingLink] = await db.query(
-        'SELECT * FROM participantes_contas WHERE id_participante = ? AND id_conta = ? AND ativo = TRUE',
-        [id, contaId]
-      );
+    // Inativar os registros antigos
+    await db.query('UPDATE participantes_contas SET ativo = FALSE WHERE id_participante = ?', [id]);
 
-      if (!existingLink.length) {
-        await db.query(
-          'INSERT INTO participantes_contas (id_participante, id_conta) VALUES (?, ?)',
+    if (contas.length > 0) {
+      // Inserir os novos registros
+      const queries = contas.map((contaId) => {
+        return db.query(
+          'INSERT INTO participantes_contas (id_participante, id_conta, ativo) VALUES (?, ?, TRUE)',
           [id, contaId]
         );
-      }
+      });
+
+      await Promise.all(queries); // Aguarda todas as inserções
     }
 
     res.status(201).json({ message: 'Contas vinculadas ao participante com sucesso!' });
@@ -460,7 +464,7 @@ app.get('/participantes/:id/contas', async (req, res) => {
       `SELECT c.id, c.nome, c.saldo_atual 
        FROM participantes_contas pc
        JOIN contas c ON pc.id_conta = c.id
-       WHERE pc.id_participante = ? AND pc.ativo = TRUE`,
+       WHERE pc.id_participante = ? AND pc.ativo = 1`,
       [id]
     );
 
@@ -470,6 +474,10 @@ app.get('/participantes/:id/contas', async (req, res) => {
     res.status(500).json({ error: 'Erro ao buscar contas vinculadas ao participante.' });
   }
 });
+
+
+
+
 
 
 
