@@ -96,8 +96,10 @@ app.get('/contas', async (req, res) => {
     const [contas] = await db.query(`
       SELECT contas.*, GROUP_CONCAT(metodos_pagamento.nome) AS metodos_pagamento
       FROM contas
-      LEFT JOIN contas_metodos_pagamento ON contas.id = contas_metodos_pagamento.id_conta
-      LEFT JOIN metodos_pagamento ON contas_metodos_pagamento.id_metodo_pagamento = metodos_pagamento.id
+      LEFT JOIN contas_metodos_pagamento 
+        ON contas.id = contas_metodos_pagamento.id_conta AND contas_metodos_pagamento.ativo = 1
+      LEFT JOIN metodos_pagamento 
+        ON contas_metodos_pagamento.id_metodo_pagamento = metodos_pagamento.id
       WHERE contas.ativo = 1
       GROUP BY contas.id
     `);
@@ -108,6 +110,7 @@ app.get('/contas', async (req, res) => {
     res.status(500).json({ error: 'Erro ao listar contas.' });
   }
 });
+
   
   
 
@@ -152,15 +155,42 @@ res.status(500).json({ error: 'Erro ao excluir conta.', details: err.message });
 app.post('/contas/vincular-metodos', async (req, res) => {
   const { id_conta, id_metodos_pagamento } = req.body;
 
-  console.log('Payload recebido no backend:', req.body);
-
-  if (!id_conta || !Array.isArray(id_metodos_pagamento) || id_metodos_pagamento.length === 0) {
+  if (!id_conta || !Array.isArray(id_metodos_pagamento)) {
     return res.status(400).json({ error: 'id_conta e um array de id_metodos_pagamento são obrigatórios.' });
   }
 
   try {
-    const queries = id_metodos_pagamento.map((id_metodo_pagamento) => {
-      return db.query('INSERT INTO contas_metodos_pagamento (id_conta, id_metodo_pagamento) VALUES (?, ?)', [id_conta, id_metodo_pagamento]);
+    // Obter métodos atuais
+    const [metodosAtuais] = await db.query(
+      'SELECT id_metodo_pagamento FROM contas_metodos_pagamento WHERE id_conta = ? AND ativo = 1',
+      [id_conta]
+    );
+
+    const idsAtuais = metodosAtuais.map((m) => m.id_metodo_pagamento);
+
+    // Se o array recebido está vazio, reutilizar métodos atuais
+    const idsRecebidos = id_metodos_pagamento.length > 0 ? id_metodos_pagamento : idsAtuais;
+
+    // Comparar se há modificações
+    const precisaAtualizar =
+      idsAtuais.length !== idsRecebidos.length || !idsAtuais.every((id) => idsRecebidos.includes(id));
+
+    if (!precisaAtualizar) {
+      return res.status(200).json({ message: 'Nenhuma modificação nos métodos de pagamento.' });
+    }
+
+    // Inativar métodos antigos
+    await db.query(
+      'UPDATE contas_metodos_pagamento SET ativo = 0 WHERE id_conta = ?',
+      [id_conta]
+    );
+
+    // Inserir novos métodos
+    const queries = idsRecebidos.map((id_metodo_pagamento) => {
+      return db.query(
+        'INSERT INTO contas_metodos_pagamento (id_conta, id_metodo_pagamento, ativo) VALUES (?, ?, 1)',
+        [id_conta, id_metodo_pagamento]
+      );
     });
 
     await Promise.all(queries);
@@ -170,6 +200,9 @@ app.post('/contas/vincular-metodos', async (req, res) => {
     res.status(500).json({ error: 'Erro ao vincular métodos de pagamento.' });
   }
 });
+
+
+
 
 
 

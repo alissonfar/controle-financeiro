@@ -9,6 +9,7 @@ const Contas = () => {
   const [metodosDisponiveis, setMetodosDisponiveis] = useState([]);
   const [metodosSelecionados, setMetodosSelecionados] = useState([]);
   const [idEdicao, setIdEdicao] = useState(null);
+  const [metodosOriginais, setMetodosOriginais] = useState([]);
 
   // Buscar dados iniciais
   useEffect(() => {
@@ -28,70 +29,73 @@ const Contas = () => {
     fetchDados();
   }, []);
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
+    try {
+      const conta = {
+        nome,
+        saldo_inicial: saldoInicial,
+        saldo_atual: saldoAtual,
+      };
 
-  try {
-    const conta = {
-      nome,
-      saldo_inicial: idEdicao ? undefined : parseFloat(saldoInicial),
-      saldo_atual: parseFloat(saldoAtual),
-    };
+      console.log('Dados enviados para criar/atualizar conta:', conta);
+      console.log('Métodos selecionados antes do envio:', metodosSelecionados);
 
-    console.log('Dados enviados para criar/atualizar conta:', conta);
-    console.log('Métodos disponíveis:', metodosDisponiveis);
-    console.log('Métodos selecionados antes da conversão:', metodosSelecionados);
+      let response;
+      if (idEdicao) {
+        response = await api.put(`/contas/${idEdicao}`, conta);
+      } else {
+        response = await api.post('/contas', conta);
+      }
 
-    // Convertendo métodos selecionados para IDs
-    const metodosPagamentoIds = metodosSelecionados.map((id) => parseInt(id, 10));
+      const metodos = metodosSelecionados.length > 0 ? metodosSelecionados : metodosOriginais;
+      console.log('Métodos de pagamento IDs enviados:', metodos);
 
-    
+      // Garantir que os métodos de pagamento sejam enviados corretamente
+      if (metodos.length > 0) {
+        await api.post('/contas/vincular-metodos', {
+          id_conta: response.data.id || idEdicao,
+          id_metodos_pagamento: metodos,
+        });
+      }
 
-    console.log('Métodos de pagamento IDs enviados:', metodosPagamentoIds);
+      alert('Conta salva com sucesso!');
+      setNome('');
+      setSaldoInicial('');
+      setSaldoAtual('');
+      setMetodosSelecionados([]);
+      setMetodosOriginais([]);
+      setIdEdicao(null);
 
-    let response;
-    if (idEdicao) {
-      response = await api.put(`/contas/${idEdicao}`, conta);
-    } else {
-      response = await api.post('/contas', conta);
+      const contasResponse = await api.get('/contas');
+      setContas(contasResponse.data);
+    } catch (error) {
+      console.error('Erro ao salvar conta:', error);
+      alert('Erro ao salvar conta.');
     }
-
-    if (metodosPagamentoIds.length > 0) {
-      await api.post('/contas/vincular-metodos', {
-        id_conta: response.data.id || idEdicao,
-        id_metodos_pagamento: metodosPagamentoIds,
-      });
-    }
-
-    alert('Conta salva com sucesso!');
-    setNome('');
-    setSaldoInicial('');
-    setSaldoAtual('');
-    setMetodosSelecionados([]);
-    setIdEdicao(null);
-
-    const contasResponse = await api.get('/contas');
-    setContas(contasResponse.data);
-  } catch (error) {
-    console.error('Erro ao salvar conta:', error.response?.data || error.message);
-    alert('Erro ao salvar conta.');
-  }
-};
-
-  
-  
-  
-  
+  };
 
   const handleEdit = (conta) => {
     setIdEdicao(conta.id);
     setNome(conta.nome);
     setSaldoInicial(conta.saldo_inicial);
     setSaldoAtual(conta.saldo_atual);
-    setMetodosSelecionados(conta.metodos_pagamento ? conta.metodos_pagamento.split(',').map((m) => m.trim()) : []);
+  
+    // Certifique-se de carregar os IDs dos métodos originais vinculados
+    const metodosAtuais = conta.metodos_pagamento
+      ? conta.metodos_pagamento.split(',').map((m) => {
+          const metodoEncontrado = metodosDisponiveis.find(
+            (metodo) => metodo.nome === m.trim()
+          );
+          return metodoEncontrado ? metodoEncontrado.id : null;
+        }).filter((id) => id !== null) // Filtrar nulos para evitar problemas
+      : [];
+  
+    setMetodosSelecionados(metodosAtuais);
+    console.log('IDs dos métodos vinculados ao editar:', metodosAtuais);
   };
-
+  
   const handleDelete = async (id) => {
     if (window.confirm('Tem certeza que deseja excluir esta conta?')) {
       try {
