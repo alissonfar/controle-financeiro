@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
+import Input from '../components/Input';
+import Modal from '../components/Modal';
 
 const Participantes = () => {
   const [participantes, setParticipantes] = useState([]);
@@ -12,18 +14,24 @@ const Participantes = () => {
   const [contasParaVincular, setContasParaVincular] = useState([]);
   const [contasOriginais, setContasOriginais] = useState([]);
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfirm, setModalConfirm] = useState(false);
+  const [selectedParticipante, setSelectedParticipante] = useState(null);
+  const [modalMessage, setModalMessage] = useState({ open: false, message: '' });
+
   // Buscar participantes e contas disponíveis
   useEffect(() => {
     const fetchDados = async () => {
       try {
-        const participantesResponse = await api.get('/participantes');
+        const [participantesResponse, contasResponse] = await Promise.all([
+          api.get('/participantes'),
+          api.get('/contas'),
+        ]);
         setParticipantes(participantesResponse.data);
-
-        const contasResponse = await api.get('/contas');
         setContasDisponiveis(contasResponse.data);
       } catch (error) {
         console.error('Erro ao buscar dados:', error);
-        alert('Erro ao carregar participantes ou contas.');
+        setModalMessage({ open: true, message: 'Erro ao carregar participantes ou contas.' });
       }
     };
 
@@ -32,18 +40,15 @@ const Participantes = () => {
 
   const fetchContasVinculadas = async (idParticipante) => {
     try {
-      console.log('Buscando contas vinculadas para o participante ID:', idParticipante);
       const response = await api.get(`/participantes/${idParticipante}/contas`);
       const contasIds = response.data.map((conta) => conta.id.toString());
       setContasParaVincular(contasIds);
       setContasOriginais(contasIds);
-      console.log('Contas ativas vinculadas carregadas:', contasIds);
     } catch (error) {
       console.error('Erro ao buscar contas vinculadas:', error);
-      alert('Erro ao carregar contas vinculadas.');
+      setModalMessage({ open: true, message: 'Erro ao carregar contas vinculadas.' });
     }
   };
-  
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -54,26 +59,18 @@ const Participantes = () => {
       if (idEdicao) {
         await api.put(`/participantes/${idEdicao}`, payload);
         participanteId = idEdicao;
-        console.log('Participante atualizado:', payload);
-        alert('Participante atualizado com sucesso!');
+        setModalMessage({ open: true, message: 'Participante atualizado com sucesso!' });
       } else {
         const response = await api.post('/participantes', payload);
         participanteId = response.data.id;
-        console.log('Participante criado:', payload);
-        alert('Participante criado com sucesso!');
+        setModalMessage({ open: true, message: 'Participante criado com sucesso!' });
       }
 
-      // Atualizar vinculação de contas somente se a flag "Usa Conta" estiver ativada
-      if (usaConta) {
-        if (contasParaVincular.sort().toString() !== contasOriginais.sort().toString()) {
-          console.log('Atualizando vinculação de contas. Contas novas:', contasParaVincular);
-          await api.post(`/participantes/${participanteId}/contas`, {
-            contas: contasParaVincular,
-          });
-          alert('Contas vinculadas com sucesso!');
-        } else {
-          console.log('Nenhuma alteração detectada nas contas vinculadas.');
-        }
+      if (usaConta && contasParaVincular.sort().toString() !== contasOriginais.sort().toString()) {
+        await api.post(`/participantes/${participanteId}/contas`, {
+          contas: contasParaVincular,
+        });
+        setModalMessage({ open: true, message: 'Contas vinculadas com sucesso!' });
       }
 
       setNome('');
@@ -82,12 +79,27 @@ const Participantes = () => {
       setIdEdicao(null);
       setContasParaVincular([]);
       setContasOriginais([]);
+      setModalOpen(false);
 
-      const response = await api.get('/participantes');
-      setParticipantes(response.data);
+      const participantesResponse = await api.get('/participantes');
+      setParticipantes(participantesResponse.data);
     } catch (error) {
       console.error('Erro ao salvar participante:', error);
-      alert('Erro ao salvar participante.');
+      setModalMessage({ open: true, message: 'Erro ao salvar participante.' });
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await api.delete(`/participantes/${selectedParticipante}`);
+      setModalMessage({ open: true, message: 'Participante excluído com sucesso!' });
+      setModalConfirm(false);
+
+      const participantesResponse = await api.get('/participantes');
+      setParticipantes(participantesResponse.data);
+    } catch (error) {
+      console.error('Erro ao excluir participante:', error);
+      setModalMessage({ open: true, message: 'Erro ao excluir participante.' });
     }
   };
 
@@ -97,48 +109,48 @@ const Participantes = () => {
     setDescricao(participante.descricao);
     setUsaConta(participante.usa_conta);
 
-    // Buscar contas vinculadas para edição
     if (participante.usa_conta) {
       fetchContasVinculadas(participante.id);
     } else {
       setContasParaVincular([]);
       setContasOriginais([]);
     }
+    setModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Tem certeza que deseja excluir este participante?')) {
-      try {
-        await api.delete(`/participantes/${id}`);
-        alert('Participante excluído com sucesso!');
-        const response = await api.get('/participantes');
-        setParticipantes(response.data);
-      } catch (error) {
-        console.error('Erro ao excluir participante:', error);
-        alert('Erro ao excluir participante.');
-      }
-    }
+  const openModal = () => {
+    setModalOpen(true);
+    setNome('');
+    setDescricao('');
+    setUsaConta(false);
+    setContasParaVincular([]);
+    setIdEdicao(null);
   };
 
   return (
-    <div className="p-6 bg-gray-100 min-h-screen">
-      <h1 className="text-2xl font-bold mb-4">Lista de Participantes</h1>
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Lista de Participantes</h1>
+        <button
+          onClick={openModal}
+          className="relative bg-green-500 text-white rounded-full w-12 h-12 flex items-center justify-center hover:bg-green-600 group font-bold"
+        >
+          +
+          <span className="absolute top-full mt-2 hidden group-hover:block bg-black text-white text-xs py-1 px-2 rounded">
+            Cadastrar Participante
+          </span>
+        </button>
+      </div>
+
       <ul className="bg-white shadow-md rounded-lg p-4">
         {participantes.map((participante) => (
-          <li
-            key={participante.id}
-            className="flex justify-between items-center p-2 border-b last:border-none"
-          >
+          <li key={participante.id} className="flex justify-between items-center p-2 border-b last:border-none">
             <div>
               <p className="font-medium">{participante.nome}</p>
               <p className="text-sm text-gray-500">{participante.descricao}</p>
-              <p className="text-sm text-gray-500">
-                Usa Conta: {participante.usa_conta ? 'Sim' : 'Não'}
-              </p>
+              <p className="text-sm text-gray-500">Usa Conta: {participante.usa_conta ? 'Sim' : 'Não'}</p>
               {participante.contas_vinculadas && (
-                <p className="text-sm text-gray-500">
-                  Contas Vinculadas: {participante.contas_vinculadas}
-                </p>
+                <p className="text-sm text-gray-500">Contas Vinculadas: {participante.contas_vinculadas}</p>
               )}
             </div>
             <div>
@@ -150,7 +162,10 @@ const Participantes = () => {
               </button>
               <button
                 className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600"
-                onClick={() => handleDelete(participante.id)}
+                onClick={() => {
+                  setSelectedParticipante(participante.id);
+                  setModalConfirm(true);
+                }}
               >
                 Excluir
               </button>
@@ -159,31 +174,28 @@ const Participantes = () => {
         ))}
       </ul>
 
-      <h2 className="text-xl font-semibold mt-6">
-        {idEdicao ? 'Editar Participante' : 'Adicionar Novo Participante'}
-      </h2>
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white shadow-md rounded-lg p-4 mt-4"
+      <Modal
+        isOpen={modalOpen}
+        title={idEdicao ? 'Editar Participante' : 'Cadastrar Participante'}
+        onClose={() => setModalOpen(false)}
+        confirmText={idEdicao ? 'Atualizar' : 'Cadastrar'}
+        onConfirm={handleSubmit}
       >
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Nome:</label>
-          <input
-            type="text"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          />
-        </div>
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Descrição:</label>
-          <textarea
-            value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-          />
-        </div>
+        <Input
+          label="Nome"
+          type="text"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          placeholder="Digite o nome do participante"
+          required
+        />
+        <Input
+          label="Descrição"
+          type="text"
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+          placeholder="Digite a descrição do participante"
+        />
         <div className="mb-4 flex items-center">
           <label className="block text-gray-700 font-medium mr-2">Usa Conta:</label>
           <input
@@ -212,13 +224,24 @@ const Participantes = () => {
             </select>
           </div>
         )}
-        <button
-          type="submit"
-          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
-        >
-          {idEdicao ? 'Atualizar' : 'Adicionar'}
-        </button>
-      </form>
+      </Modal>
+
+      <Modal
+        isOpen={modalConfirm}
+        title="Confirmação"
+        onClose={() => setModalConfirm(false)}
+        confirmText="Excluir"
+        onConfirm={handleDelete}
+      >
+        <p className="text-gray-700">Tem certeza que deseja excluir este participante?</p>
+      </Modal>
+
+      <Modal
+        isOpen={modalMessage.open}
+        onConfirm={() => setModalMessage({ open: false, message: '' })}
+      >
+        <p className="text-gray-700">{modalMessage.message}</p>
+      </Modal>
     </div>
   );
 };
