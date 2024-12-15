@@ -5,11 +5,12 @@ const Cartoes = () => {
   const [cartoes, setCartoes] = useState([]);
   const [nome, setNome] = useState('');
   const [idConta, setIdConta] = useState('');
-  const [idMetodoPagamento, setIdMetodoPagamento] = useState('');
+  const [idMetodoPagamento, setIdMetodoPagamento] = useState([]);
   const [limite, setLimite] = useState('');
   const [contas, setContas] = useState([]);
   const [metodos, setMetodos] = useState([]);
   const [idEdicao, setIdEdicao] = useState(null);
+  const [metodosOriginais, setMetodosOriginais] = useState([]);
 
   // Buscar cartões, contas e métodos de pagamento ao carregar a página
   useEffect(() => {
@@ -18,7 +19,7 @@ const Cartoes = () => {
         const [cartoesResponse, contasResponse, metodosResponse] = await Promise.all([
           api.get('/cartoes'),
           api.get('/contas'),
-          api.get('/metodos_pagamento')
+          api.get('/metodos_pagamento'),
         ]);
         setCartoes(cartoesResponse.data);
         setContas(contasResponse.data);
@@ -36,12 +37,24 @@ const Cartoes = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!nome || !idConta || !idMetodoPagamento) {
+    if (!nome || !idConta || idMetodoPagamento.length === 0) {
       alert('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
 
-    const cartao = { nome, id_conta: idConta, id_metodo_pagamento: idMetodoPagamento, limite };
+    const metodosParaEnviar =
+      idMetodoPagamento.sort().toString() === metodosOriginais.sort().toString()
+        ? metodosOriginais
+        : idMetodoPagamento;
+
+    const cartao = {
+      nome,
+      id_conta: idConta,
+      metodos_pagamento: metodosParaEnviar,
+      limite: limite === '' ? null : limite, // Transformar valor vazio em null
+    };
+
+    console.log('Dados enviados para criar/atualizar cartão:', cartao);
 
     try {
       if (idEdicao) {
@@ -54,16 +67,34 @@ const Cartoes = () => {
 
       setNome('');
       setIdConta('');
-      setIdMetodoPagamento('');
+      setIdMetodoPagamento([]);
       setLimite('');
       setIdEdicao(null);
+      setMetodosOriginais([]);
 
       const response = await api.get('/cartoes');
       setCartoes(response.data);
+      console.log('Cartões atualizados após criação/edição:', response.data);
     } catch (error) {
       console.error('Erro ao salvar cartão:', error);
       alert('Erro ao salvar cartão.');
     }
+  };
+
+  // Carregar informações ao editar um cartão
+  const handleEdit = (cartao) => {
+    setIdEdicao(cartao.id);
+    setNome(cartao.nome);
+    setIdConta(cartao.id_conta);
+    setLimite(cartao.limite || '');
+
+    // Carregar métodos originais
+    const metodos = cartao.metodos_pagamento
+      ? cartao.metodos_pagamento.split(',').map((m) => m.trim())
+      : [];
+    setIdMetodoPagamento(metodos);
+    setMetodosOriginais(metodos);
+    console.log('Métodos vinculados ao editar:', metodos);
   };
 
   // Excluir cartão logicamente
@@ -93,20 +124,14 @@ const Cartoes = () => {
             <div>
               <p className="font-medium">{cartao.nome}</p>
               <p className="text-sm text-gray-500">
-                Conta: {cartao.nome_conta} | Método: {cartao.nome_metodo_pagamento}
+                Conta: {cartao.nome_conta} | Método(s): {cartao.metodos_pagamento || 'Nenhum'}
               </p>
               {cartao.limite && <p className="text-sm text-gray-500">Limite: R$ {cartao.limite}</p>}
             </div>
             <div>
               <button
                 className="bg-blue-500 text-white px-3 py-1 rounded-lg mr-2 hover:bg-blue-600"
-                onClick={() => {
-                  setNome(cartao.nome);
-                  setIdConta(cartao.id_conta);
-                  setIdMetodoPagamento(cartao.id_metodo_pagamento);
-                  setLimite(cartao.limite || '');
-                  setIdEdicao(cartao.id);
-                }}
+                onClick={() => handleEdit(cartao)}
               >
                 Editar
               </button>
@@ -152,12 +177,14 @@ const Cartoes = () => {
         <div className="mb-4">
           <label className="block text-gray-700 font-medium">Método de Pagamento:</label>
           <select
+            multiple
             value={idMetodoPagamento}
-            onChange={(e) => setIdMetodoPagamento(e.target.value)}
+            onChange={(e) =>
+              setIdMetodoPagamento(Array.from(e.target.selectedOptions, (option) => option.value))
+            }
             className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
             required
           >
-            <option value="">Selecione um método</option>
             {metodos.map((metodo) => (
               <option key={metodo.id} value={metodo.id}>
                 {metodo.nome}

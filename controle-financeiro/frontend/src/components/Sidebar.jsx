@@ -42,13 +42,11 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
             </Link>
           </li>
           <li>
-            <Link
-              to="contas"
-              className="flex items-center gap-3 px-4 py-2 rounded hover:bg-azul-600 hover:shadow-lg transition-all"
-            >
-              <FiLayers className="text-lg" />
-              <span>Gerenciar Contas</span>
-            </Link>
+          <Link to="contas" className="flex items-center gap-3 px-4 py-2 rounded hover:bg-azul-600">
+            <FiLayers className="text-lg" />
+            <span>Gerenciar Contas</span>
+          </Link>
+
           </li>
           <li>
             <Link
