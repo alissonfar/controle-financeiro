@@ -44,20 +44,23 @@ const Contas = () => {
 
       let response;
       if (idEdicao) {
-        response = await api.put(`/contas/${idEdicao}`, conta);
+        await api.put(`/contas/${idEdicao}`, conta);
+        response = { data: { id: idEdicao } };
         setModalMessage({ open: true, message: 'Conta atualizada com sucesso!' });
       } else {
         response = await api.post('/contas', conta);
         setModalMessage({ open: true, message: 'Conta criada com sucesso!' });
       }
 
+      // Vincular métodos de pagamento
       if (metodosSelecionados.length > 0) {
         await api.post('/contas/vincular-metodos', {
-          id_conta: response.data.id || idEdicao,
+          id_conta: response.data.id,
           id_metodos_pagamento: metodosSelecionados,
         });
       }
 
+      // Resetar campos e atualizar lista
       setNome('');
       setSaldoInicial('');
       setSaldoAtual('');
@@ -69,10 +72,14 @@ const Contas = () => {
       setContas(contasResponse.data);
     } catch (error) {
       console.error('Erro ao salvar conta:', error);
-      setModalMessage({ open: true, message: 'Erro ao salvar conta.' });
+      setModalMessage({
+        open: true,
+        message: error.response?.data?.error || 'Erro ao salvar conta.',
+      });
     }
   };
 
+  // Excluir Conta
   const handleDelete = async () => {
     try {
       await api.delete(`/contas/${selectedConta}`);
@@ -87,19 +94,22 @@ const Contas = () => {
     }
   };
 
+  // Editar Conta
   const handleEdit = (conta) => {
     setIdEdicao(conta.id);
     setNome(conta.nome);
     setSaldoInicial(conta.saldo_inicial);
     setSaldoAtual(conta.saldo_atual);
-    setMetodosSelecionados(
-      conta.metodos_pagamento
-        ? conta.metodos_pagamento.split(',').map((m) => {
-            const metodo = metodosDisponiveis.find((metodo) => metodo.nome.trim() === m.trim());
-            return metodo?.id || null;
-          })
-        : []
-    );
+
+    // Extrair métodos de pagamento e mapear para os IDs
+    const metodosIds = conta.metodos_pagamento
+      ? conta.metodos_pagamento.split(',').map((nomeMetodo) => {
+          const metodo = metodosDisponiveis.find((m) => m.nome.trim() === nomeMetodo.trim());
+          return metodo?.id || null;
+        })
+      : [];
+    setMetodosSelecionados(metodosIds.filter((id) => id !== null));
+
     setModalOpen(true);
   };
 

@@ -60,3 +60,32 @@ exports.excluirConta = async (req, res) => {
     res.status(500).json({ error: 'Erro ao excluir conta.', details: err.message });
   }
 };
+
+exports.vincularMetodosPagamento = async (req, res) => {
+  const { id_conta, id_metodos_pagamento } = req.body;
+
+  // Validação básica dos dados recebidos
+  if (!id_conta || !Array.isArray(id_metodos_pagamento)) {
+    return res.status(400).json({ error: 'id_conta e um array de id_metodos_pagamento são obrigatórios.' });
+  }
+
+  try {
+    // Inativar os métodos de pagamento atuais vinculados à conta
+    await db.query('UPDATE contas_metodos_pagamento SET ativo = 0 WHERE id_conta = ?', [id_conta]);
+
+    // Inserir os novos métodos de pagamento
+    const queries = id_metodos_pagamento.map((id_metodo_pagamento) =>
+      db.query(
+        'INSERT INTO contas_metodos_pagamento (id_conta, id_metodo_pagamento, ativo) VALUES (?, ?, 1)',
+        [id_conta, id_metodo_pagamento]
+      )
+    );
+
+    await Promise.all(queries); // Aguarda todas as inserções serem concluídas
+
+    res.status(201).json({ message: 'Métodos de pagamento vinculados com sucesso!' });
+  } catch (error) {
+    console.error('Erro ao vincular métodos de pagamento:', error);
+    res.status(500).json({ error: 'Erro ao vincular métodos de pagamento.', details: error.message });
+  }
+};
