@@ -53,3 +53,55 @@ exports.excluirParticipante = async (req, res) => {
     res.status(500).json({ error: 'Erro ao excluir participante.', details: err.message });
   }
 };
+
+exports.listarContasVinculadas = async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({ error: 'ID do participante é obrigatório.' });
+  }
+
+  try {
+    const [rows] = await db.query(`
+      SELECT c.id, c.nome, c.saldo_atual 
+      FROM participantes_contas pc
+      JOIN contas c ON pc.id_conta = c.id
+      WHERE pc.id_participante = ? AND pc.ativo = 1
+    `, [id]);
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Erro ao buscar contas vinculadas ao participante:', error);
+    res.status(500).json({ error: 'Erro ao buscar contas vinculadas ao participante.' });
+  }
+};
+
+exports.vincularContas = async (req, res) => {
+  const { id } = req.params;
+  const { contas } = req.body;
+
+  if (!id || !Array.isArray(contas)) {
+    return res.status(400).json({ error: 'ID do participante e uma lista de contas são obrigatórios.' });
+  }
+
+  try {
+    // Inativar todas as contas vinculadas anteriormente
+    await db.query('UPDATE participantes_contas SET ativo = FALSE WHERE id_participante = ?', [id]);
+
+    // Inserir novas contas vinculadas
+    if (contas.length > 0) {
+      const queries = contas.map((id_conta) => {
+        return db.query(
+          'INSERT INTO participantes_contas (id_participante, id_conta, ativo) VALUES (?, ?, TRUE)',
+          [id, id_conta]
+        );
+      });
+      await Promise.all(queries);
+    }
+
+    res.status(201).json({ message: 'Contas vinculadas com sucesso!' });
+  } catch (error) {
+    console.error('Erro ao vincular contas ao participante:', error);
+    res.status(500).json({ error: 'Erro ao vincular contas ao participante.', details: error.message });
+  }
+};
