@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import Input from '../components/Input';
+import Modal from '../components/Modal';
 
 const Cartoes = () => {
   const [cartoes, setCartoes] = useState([]);
@@ -11,6 +13,11 @@ const Cartoes = () => {
   const [metodos, setMetodos] = useState([]);
   const [idEdicao, setIdEdicao] = useState(null);
   const [metodosOriginais, setMetodosOriginais] = useState([]);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfirm, setModalConfirm] = useState(false);
+  const [selectedCartao, setSelectedCartao] = useState(null);
+  const [modalMessage, setModalMessage] = useState({ open: false, message: '' });
 
   // Buscar cartões, contas e métodos de pagamento ao carregar a página
   useEffect(() => {
@@ -26,7 +33,7 @@ const Cartoes = () => {
         setMetodos(metodosResponse.data);
       } catch (error) {
         console.error('Erro ao buscar dados:', error);
-        alert('Erro ao carregar cartões, contas ou métodos de pagamento.');
+        setModalMessage({ open: true, message: 'Erro ao carregar cartões, contas ou métodos de pagamento.' });
       }
     };
 
@@ -38,7 +45,7 @@ const Cartoes = () => {
     e.preventDefault();
 
     if (!nome || !idConta || idMetodoPagamento.length === 0) {
-      alert('Por favor, preencha todos os campos obrigatórios.');
+      setModalMessage({ open: true, message: 'Por favor, preencha todos os campos obrigatórios.' });
       return;
     }
 
@@ -51,34 +58,36 @@ const Cartoes = () => {
       nome,
       id_conta: idConta,
       metodos_pagamento: metodosParaEnviar,
-      limite: limite === '' ? null : limite, // Transformar valor vazio em null
+      limite: limite === '' ? null : limite,
     };
-
-    console.log('Dados enviados para criar/atualizar cartão:', cartao);
 
     try {
       if (idEdicao) {
         await api.put(`/cartoes/${idEdicao}`, cartao);
-        alert('Cartão atualizado com sucesso!');
+        setModalMessage({ open: true, message: 'Cartão atualizado com sucesso!' });
       } else {
         await api.post('/cartoes', cartao);
-        alert('Cartão criado com sucesso!');
+        setModalMessage({ open: true, message: 'Cartão criado com sucesso!' });
       }
 
-      setNome('');
-      setIdConta('');
-      setIdMetodoPagamento([]);
-      setLimite('');
-      setIdEdicao(null);
-      setMetodosOriginais([]);
-
+      resetForm();
       const response = await api.get('/cartoes');
       setCartoes(response.data);
-      console.log('Cartões atualizados após criação/edição:', response.data);
     } catch (error) {
       console.error('Erro ao salvar cartão:', error);
-      alert('Erro ao salvar cartão.');
+      setModalMessage({ open: true, message: 'Erro ao salvar cartão.' });
     }
+  };
+
+  // Resetar formulário
+  const resetForm = () => {
+    setNome('');
+    setIdConta('');
+    setIdMetodoPagamento([]);
+    setLimite('');
+    setIdEdicao(null);
+    setMetodosOriginais([]);
+    setModalOpen(false);
   };
 
   // Carregar informações ao editar um cartão
@@ -88,39 +97,49 @@ const Cartoes = () => {
     setIdConta(cartao.id_conta);
     setLimite(cartao.limite || '');
 
-    // Carregar métodos originais
     const metodos = cartao.metodos_pagamento
       ? cartao.metodos_pagamento.split(',').map((m) => m.trim())
       : [];
     setIdMetodoPagamento(metodos);
     setMetodosOriginais(metodos);
-    console.log('Métodos vinculados ao editar:', metodos);
+
+    setModalOpen(true);
   };
 
   // Excluir cartão logicamente
   const handleDelete = async (id) => {
-    if (window.confirm('Tem certeza que deseja excluir este cartão?')) {
-      try {
-        await api.delete(`/cartoes/${id}`);
-        alert('Cartão excluído com sucesso!');
-        const response = await api.get('/cartoes');
-        setCartoes(response.data);
-      } catch (error) {
-        console.error('Erro ao excluir cartão:', error);
-        alert('Erro ao excluir cartão.');
-      }
+    setSelectedCartao(id);
+    setModalConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await api.delete(`/cartoes/${selectedCartao}`);
+      setModalMessage({ open: true, message: 'Cartão excluído com sucesso!' });
+      setModalConfirm(false);
+      const response = await api.get('/cartoes');
+      setCartoes(response.data);
+    } catch (error) {
+      console.error('Erro ao excluir cartão:', error);
+      setModalMessage({ open: true, message: 'Erro ao excluir cartão.' });
     }
   };
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
-      <h1 className="text-2xl font-bold mb-4">Cartões</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Cartões</h1>
+        <button
+          onClick={() => setModalOpen(true)}
+          className="bg-green-500 text-white rounded-full w-12 h-12 flex items-center justify-center hover:bg-green-600"
+        >
+          +
+        </button>
+      </div>
+
       <ul className="bg-white shadow-md rounded-lg p-4 mb-6">
         {cartoes.map((cartao) => (
-          <li
-            key={cartao.id}
-            className="flex justify-between items-center p-2 border-b last:border-none"
-          >
+          <li key={cartao.id} className="flex justify-between items-center p-2 border-b last:border-none">
             <div>
               <p className="font-medium">{cartao.nome}</p>
               <p className="text-sm text-gray-500">
@@ -146,24 +165,21 @@ const Cartoes = () => {
         ))}
       </ul>
 
-      <h2 className="text-xl font-semibold mb-4">{idEdicao ? 'Editar Cartão' : 'Adicionar Cartão'}</h2>
-      <form onSubmit={handleSubmit} className="bg-white shadow-md rounded-lg p-4">
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Nome:</label>
-          <input
-            type="text"
-            value={nome}
-            onChange={(e) => setNome(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          />
-        </div>
+      {/* Modal de Cadastro/Edição */}
+      <Modal
+        isOpen={modalOpen}
+        title={idEdicao ? 'Editar Cartão' : 'Cadastrar Cartão'}
+        onClose={resetForm}
+        confirmText={idEdicao ? 'Atualizar' : 'Cadastrar'}
+        onConfirm={handleSubmit}
+      >
+        <Input label="Nome" value={nome} onChange={(e) => setNome(e.target.value)} required />
         <div className="mb-4">
           <label className="block text-gray-700 font-medium">Conta:</label>
           <select
             value={idConta}
             onChange={(e) => setIdConta(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
+            className="w-full border rounded-lg px-3 py-2"
             required
           >
             <option value="">Selecione uma conta</option>
@@ -182,7 +198,7 @@ const Cartoes = () => {
             onChange={(e) =>
               setIdMetodoPagamento(Array.from(e.target.selectedOptions, (option) => option.value))
             }
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
+            className="w-full border rounded-lg px-3 py-2"
             required
           >
             {metodos.map((metodo) => (
@@ -192,23 +208,33 @@ const Cartoes = () => {
             ))}
           </select>
         </div>
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Limite (opcional):</label>
-          <input
-            type="number"
-            step="0.01"
-            value={limite}
-            onChange={(e) => setLimite(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-          />
-        </div>
-        <button
-          type="submit"
-          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
-        >
-          {idEdicao ? 'Atualizar' : 'Adicionar'}
-        </button>
-      </form>
+        <Input
+          label="Limite (opcional)"
+          type="number"
+          step="0.01"
+          value={limite}
+          onChange={(e) => setLimite(e.target.value)}
+        />
+      </Modal>
+
+      {/* Modal de Confirmação */}
+      <Modal
+        isOpen={modalConfirm}
+        title="Confirmação"
+        onClose={() => setModalConfirm(false)}
+        confirmText="Excluir"
+        onConfirm={confirmDelete}
+      >
+        <p>Tem certeza que deseja excluir este cartão?</p>
+      </Modal>
+
+      {/* Modal de Mensagens */}
+      <Modal
+        isOpen={modalMessage.open}
+        onConfirm={() => setModalMessage({ open: false, message: '' })}
+      >
+        <p>{modalMessage.message}</p>
+      </Modal>
     </div>
   );
 };
