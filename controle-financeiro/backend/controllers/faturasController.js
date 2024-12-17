@@ -10,12 +10,22 @@ exports.listarFaturas = async (req, res) => {
 };
 
 exports.criarFatura = async (req, res) => {
-  const { id_cartao, data_fechamento, data_vencimento, valor_total, status, justificativa } = req.body;
+  const { id_cartao, data_fechamento, data_vencimento, status, justificativa } = req.body;
+
   try {
+    // Validação do cartão
+    const [cartaoExistente] = await db.query('SELECT id FROM cartoes WHERE id = ? AND ativo = TRUE', [id_cartao]);
+    if (!cartaoExistente.length) {
+      return res.status(400).json({ error: 'Cartão não encontrado ou inativo.' });
+    }
+
+    // Criação da fatura
     const [result] = await db.query(
-      'INSERT INTO faturas (id_cartao, data_fechamento, data_vencimento, valor_total, status, justificativa) VALUES (?, ?, ?, ?, ?, ?)',
-      [id_cartao, data_fechamento, data_vencimento, valor_total, status, justificativa]
+      `INSERT INTO faturas (id_cartao, data_fechamento, data_vencimento, valor_total, status, justificativa) 
+       VALUES (?, ?, ?, 0.00, ?, ?)`,
+      [id_cartao, data_fechamento, data_vencimento, status || 'aberta', justificativa || null]
     );
+
     res.status(201).json({ message: 'Fatura criada com sucesso!', id: result.insertId });
   } catch (err) {
     res.status(500).json({ error: 'Erro ao criar fatura.', details: err.message });

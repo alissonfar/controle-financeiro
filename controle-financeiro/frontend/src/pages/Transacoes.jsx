@@ -26,13 +26,13 @@ const Transacoes = () => {
   useEffect(() => {
     const fetchDados = async () => {
       try {
-        const transacoesResponse = await api.get('/transacoes');
+        const [transacoesResponse, participantesResponse, metodosResponse] = await Promise.all([
+          api.get('/transacoes'),
+          api.get('/participantes'),
+          api.get('/metodos_pagamento'),
+        ]);
         setTransacoes(transacoesResponse.data);
-
-        const participantesResponse = await api.get('/participantes');
         setParticipantes(participantesResponse.data);
-
-        const metodosResponse = await api.get('/metodos_pagamento');
         setMetodosPagamento(metodosResponse.data);
       } catch (error) {
         console.error('Erro ao buscar dados:', error);
@@ -59,12 +59,12 @@ const Transacoes = () => {
   // Adicionar ou Editar Transação
   const handleSubmit = async (e) => {
     e.preventDefault();
-
+  
     if (!descricao || !valor || !data || participantesSelecionados.length === 0 || !metodoPagamento || !categoria) {
       setModalMessage({ open: true, message: 'Por favor, preencha todos os campos obrigatórios.' });
       return;
     }
-
+  
     const transacao = {
       descricao,
       valor,
@@ -72,11 +72,14 @@ const Transacoes = () => {
       metodo_pagamento: metodoPagamento,
       categoria,
       status,
-      participantes: participantesSelecionados,
+      participantes: participantesSelecionados.map((p) => ({
+        id: p.id,
+        usa_conta: p.usa_conta || false,
+      })),
     };
-
+  
     console.log('Dados enviados para o backend:', transacao);
-
+  
     try {
       if (idEdicao) {
         await api.put(`/transacoes/${idEdicao}`, transacao);
@@ -85,24 +88,29 @@ const Transacoes = () => {
         await api.post('/transacoes', transacao);
         setModalMessage({ open: true, message: 'Transação criada com sucesso!' });
       }
-
-      setDescricao('');
-      setValor('');
-      setData('');
-      setMetodoPagamento('');
-      setCategoria('');
-      setStatus('pendente');
-      setParticipantesSelecionados([]);
-      setIdEdicao(null);
-      setModalOpen(false);
-
+  
       const response = await api.get('/transacoes');
       setTransacoes(response.data);
+  
+      setModalOpen(false);
+      handleNewTransaction();
     } catch (error) {
       console.error('Erro ao salvar transação:', error);
+  
+      // Capturar erro específico retornado pelo backend
+      let errorMessage = 'Erro ao salvar transação.';
+  
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.status === 400) {
+        errorMessage = 'Nenhuma conta ou cartão foi encontrado para os dados fornecidos.';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Erro interno do servidor. Por favor, tente novamente mais tarde.';
+      }
+  
       setModalMessage({
         open: true,
-        message: error.response?.data?.error || 'Erro ao salvar transação.',
+        message: errorMessage,
       });
     }
   };
