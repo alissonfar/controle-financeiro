@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
+import Input from '../components/Input';
+import Modal from '../components/Modal';
 
 const Transacoes = () => {
   const [transacoes, setTransacoes] = useState([]);
@@ -13,10 +15,14 @@ const Transacoes = () => {
 
   const [participantes, setParticipantes] = useState([]);
   const [participantesSelecionados, setParticipantesSelecionados] = useState([]);
-  const [contas, setContas] = useState([]);
   const [metodosPagamento, setMetodosPagamento] = useState([]);
 
-  // Buscar transações, participantes, contas e métodos de pagamento
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfirm, setModalConfirm] = useState(false);
+  const [selectedTransacao, setSelectedTransacao] = useState(null);
+  const [modalMessage, setModalMessage] = useState({ open: false, message: '' });
+
+  // Buscar transações, participantes e métodos de pagamento
   useEffect(() => {
     const fetchDados = async () => {
       try {
@@ -26,26 +32,36 @@ const Transacoes = () => {
         const participantesResponse = await api.get('/participantes');
         setParticipantes(participantesResponse.data);
 
-        const contasResponse = await api.get('/contas');
-        setContas(contasResponse.data);
-
         const metodosResponse = await api.get('/metodos_pagamento');
         setMetodosPagamento(metodosResponse.data);
       } catch (error) {
         console.error('Erro ao buscar dados:', error);
-        alert('Erro ao carregar transações, participantes, contas ou métodos de pagamento.');
+        setModalMessage({ open: true, message: 'Erro ao carregar os dados.' });
       }
     };
 
     fetchDados();
   }, []);
 
+  // Resetar campos ao abrir o modal para nova transação
+  const handleNewTransaction = () => {
+    setDescricao('');
+    setValor('');
+    setData('');
+    setMetodoPagamento('');
+    setCategoria('');
+    setStatus('pendente');
+    setParticipantesSelecionados([]);
+    setIdEdicao(null);
+    setModalOpen(true);
+  };
+
   // Adicionar ou Editar Transação
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!descricao || !valor || !data || participantesSelecionados.length === 0 || !metodoPagamento || !categoria) {
-      alert('Por favor, preencha todos os campos obrigatórios.');
+      setModalMessage({ open: true, message: 'Por favor, preencha todos os campos obrigatórios.' });
       return;
     }
 
@@ -59,74 +75,97 @@ const Transacoes = () => {
       participantes: participantesSelecionados,
     };
 
+    console.log('Dados enviados para o backend:', transacao);
+
     try {
       if (idEdicao) {
         await api.put(`/transacoes/${idEdicao}`, transacao);
-        alert('Transação atualizada com sucesso!');
+        setModalMessage({ open: true, message: 'Transação atualizada com sucesso!' });
       } else {
         await api.post('/transacoes', transacao);
-        alert('Transação criada com sucesso!');
+        setModalMessage({ open: true, message: 'Transação criada com sucesso!' });
       }
 
-      // Limpar os campos do formulário
       setDescricao('');
       setValor('');
       setData('');
-      setParticipantesSelecionados([]);
       setMetodoPagamento('');
       setCategoria('');
       setStatus('pendente');
+      setParticipantesSelecionados([]);
       setIdEdicao(null);
+      setModalOpen(false);
 
-      // Atualizar lista de transações
       const response = await api.get('/transacoes');
       setTransacoes(response.data);
     } catch (error) {
       console.error('Erro ao salvar transação:', error);
-      alert('Erro ao salvar transação.');
+      setModalMessage({
+        open: true,
+        message: error.response?.data?.error || 'Erro ao salvar transação.',
+      });
     }
   };
 
-  // Preencher o formulário para edição
+  // Editar Transação
   const handleEdit = (transacao) => {
+    console.log('Transação recebida:', transacao);
+
     setIdEdicao(transacao.id);
-    setDescricao(transacao.descricao);
-    setValor(transacao.valor);
-    setData(transacao.data);
-    setMetodoPagamento(transacao.metodo_pagamento);
-    setCategoria(transacao.categoria);
-    setStatus(transacao.status);
-    setParticipantesSelecionados(transacao.participantes || []);
+    setDescricao(transacao.descricao || '');
+    setValor(transacao.valor || '');
+
+    // Formatar data para yyyy-MM-dd
+    const dataFormatada = transacao.data ? transacao.data.split('T')[0] : '';
+    setData(dataFormatada);
+
+    setMetodoPagamento(transacao.metodo_pagamento || '');
+    setCategoria(transacao.categoria || '');
+    setStatus(transacao.status || 'pendente');
+
+    const participantesCorrigidos = Array.isArray(transacao.participantes) ? transacao.participantes : [];
+    setParticipantesSelecionados(participantesCorrigidos);
+
+    setModalOpen(true);
   };
 
-  // Excluir transação logicamente
-  const handleDelete = async (id) => {
-    if (window.confirm('Tem certeza que deseja excluir esta transação?')) {
-      try {
-        await api.delete(`/transacoes/${id}`);
-        alert('Transação excluída com sucesso!');
-        const response = await api.get('/transacoes');
-        setTransacoes(response.data);
-      } catch (error) {
-        console.error('Erro ao excluir transação:', error);
-        alert('Erro ao excluir transação.');
-      }
+  // Excluir Transação
+  const handleDelete = async () => {
+    try {
+      await api.delete(`/transacoes/${selectedTransacao}`);
+      setModalMessage({ open: true, message: 'Transação excluída com sucesso!' });
+      setModalConfirm(false);
+
+      const response = await api.get('/transacoes');
+      setTransacoes(response.data);
+    } catch (error) {
+      console.error('Erro ao excluir transação:', error);
+      setModalMessage({ open: true, message: 'Erro ao excluir transação.' });
     }
   };
 
   return (
-    <div className="p-6 bg-gray-100 min-h-screen">
-      <h1 className="text-2xl font-bold mb-4">Lista de Transações</h1>
-      <ul className="bg-white shadow-md rounded-lg p-4 mb-6">
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Lista de Transações</h1>
+        <button
+          onClick={handleNewTransaction}
+          className="bg-green-500 text-white rounded-full w-12 h-12 flex items-center justify-center hover:bg-green-600"
+        >
+          +
+        </button>
+      </div>
+
+      {/* Listar Transações */}
+      <ul className="bg-white shadow-md rounded-lg p-4">
         {transacoes.map((transacao) => (
-          <li
-            key={transacao.id}
-            className="flex flex-col p-4 border-b last:border-none"
-          >
+          <li key={transacao.id} className="flex justify-between items-center p-2 border-b last:border-none">
             <div>
               <p className="font-medium">{transacao.descricao}</p>
-              <p className="text-sm text-gray-500">Valor Total: R$ {transacao.valor}</p>
-              <p className="text-sm text-gray-500">Data: {transacao.data}</p>
+              <p className="text-sm text-gray-500">Valor: R$ {transacao.valor}</p>
+              <p className="text-sm text-gray-500">
+                Data: {transacao.data ? transacao.data.split('T')[0] : 'Data não disponível'}
+              </p>
               <p className="text-sm text-gray-500">Categoria: {transacao.categoria}</p>
             </div>
             <div>
@@ -138,7 +177,10 @@ const Transacoes = () => {
               </button>
               <button
                 className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600"
-                onClick={() => handleDelete(transacao.id)}
+                onClick={() => {
+                  setSelectedTransacao(transacao.id);
+                  setModalConfirm(true);
+                }}
               >
                 Excluir
               </button>
@@ -147,39 +189,17 @@ const Transacoes = () => {
         ))}
       </ul>
 
-      <h2 className="text-xl font-semibold">Adicionar ou Editar Transação</h2>
-      <form onSubmit={handleSubmit} className="bg-white shadow-md rounded-lg p-4 mt-4">
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Descrição:</label>
-          <input
-            type="text"
-            value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          />
-        </div>
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Valor:</label>
-          <input
-            type="number"
-            step="0.01"
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          />
-        </div>
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Data:</label>
-          <input
-            type="date"
-            value={data}
-            onChange={(e) => setData(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          />
-        </div>
+      {/* Modal de Cadastro/Edição */}
+      <Modal
+        isOpen={modalOpen}
+        title={idEdicao ? 'Editar Transação' : 'Cadastrar Transação'}
+        onClose={() => setModalOpen(false)}
+        confirmText={idEdicao ? 'Atualizar' : 'Cadastrar'}
+        onConfirm={handleSubmit}
+      >
+        <Input label="Descrição" value={descricao} onChange={(e) => setDescricao(e.target.value)} required />
+        <Input label="Valor" type="number" value={valor} onChange={(e) => setValor(e.target.value)} required />
+        <Input label="Data" type="date" value={data} onChange={(e) => setData(e.target.value)} required />
         <div className="mb-4">
           <label className="block text-gray-700 font-medium">Participantes:</label>
           {participantes.map((p) => (
@@ -187,16 +207,21 @@ const Transacoes = () => {
               <input
                 type="checkbox"
                 value={p.id}
+                checked={Array.isArray(participantesSelecionados) && participantesSelecionados.some((part) => part.id === p.id)}
                 onChange={(e) => {
                   if (e.target.checked) {
-                    setParticipantesSelecionados([...participantesSelecionados, { id: p.id, usa_conta: p.usa_conta }]);
+                    setParticipantesSelecionados([
+                      ...participantesSelecionados,
+                      { id: p.id, usa_conta: p.usa_conta },
+                    ]);
                   } else {
-                    setParticipantesSelecionados(participantesSelecionados.filter((part) => part.id !== p.id));
+                    setParticipantesSelecionados(
+                      participantesSelecionados.filter((part) => part.id !== p.id)
+                    );
                   }
                 }}
-                className="mr-2"
               />
-              <label>{p.nome}</label>
+              <label className="ml-2">{p.nome}</label>
             </div>
           ))}
         </div>
@@ -205,34 +230,37 @@ const Transacoes = () => {
           <select
             value={metodoPagamento}
             onChange={(e) => setMetodoPagamento(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
+            className="w-full border rounded-lg px-3 py-2"
           >
-            <option value="">Selecione um método de pagamento</option>
-            {metodosPagamento.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.nome}
+            <option value="">Selecione um método</option>
+            {metodosPagamento.map((metodo) => (
+              <option key={metodo.id} value={metodo.id}>
+                {metodo.nome}
               </option>
             ))}
           </select>
         </div>
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium">Categoria:</label>
-          <input
-            type="text"
-            value={categoria}
-            onChange={(e) => setCategoria(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 mt-1 focus:outline-none focus:ring focus:ring-blue-200"
-            required
-          />
-        </div>
-        <button
-          type="submit"
-          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600"
-        >
-          {idEdicao ? 'Atualizar' : 'Adicionar'}
-        </button>
-      </form>
+        <Input label="Categoria" value={categoria} onChange={(e) => setCategoria(e.target.value)} required />
+      </Modal>
+
+      {/* Modal de Confirmação */}
+      <Modal
+        isOpen={modalConfirm}
+        title="Confirmação"
+        onClose={() => setModalConfirm(false)}
+        confirmText="Excluir"
+        onConfirm={handleDelete}
+      >
+        <p>Tem certeza que deseja excluir esta transação?</p>
+      </Modal>
+
+      {/* Modal de Mensagens */}
+      <Modal
+        isOpen={modalMessage.open}
+        onConfirm={() => setModalMessage({ open: false, message: '' })}
+      >
+        <p>{modalMessage.message}</p>
+      </Modal>
     </div>
   );
 };
