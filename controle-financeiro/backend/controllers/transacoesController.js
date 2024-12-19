@@ -1,7 +1,103 @@
 const db = require('../db');
 
+// Função utilitária para validação de dados de entrada
+function validarDadosTransacao(dados) {
+  const { descricao, valor, data, metodo_pagamento, participantes } = dados;
+
+  if (!descricao || typeof descricao !== 'string' || descricao.trim() === '') {
+    throw new Error('Descrição inválida.');
+  }
+
+  if (!valor || isNaN(Number(valor)) || Number(valor) <= 0) {
+    throw new Error('Valor inválido.');
+  }
+
+  if (!data || isNaN(Date.parse(data))) {
+    throw new Error('Data inválida.');
+  }
+
+  if (!metodo_pagamento || isNaN(Number(metodo_pagamento))) {
+    throw new Error('Método de pagamento inválido.');
+  }
+
+  if (!participantes || !Array.isArray(participantes) || participantes.length === 0) {
+    throw new Error('Participantes inválidos. Deve ser uma lista de participantes.');
+  }
+}
+
+// Função utilitária para validação de participantes e seleção de contas
+async function validarParticipantes(connection, participantes, metodo_pagamento) {
+  for (const participante of participantes) {
+    const { id: participanteId } = participante;
+
+    // Verificar se o participante usa conta
+    const [dadosParticipante] = await connection.query(
+      `SELECT usa_conta FROM participantes WHERE id = ? AND ativo = 1`,
+      [participanteId]
+    );
+
+    if (dadosParticipante.length === 0) {
+      throw new Error(`Participante ID ${participanteId} não encontrado ou inativo.`);
+    }
+
+    const { usa_conta } = dadosParticipante[0];
+
+    // Se o participante não usa conta, pular validações relacionadas a contas
+    if (usa_conta === 0) {
+      console.log(`Participante ID ${participanteId} não usa conta. Pulando validações de contas.`);
+      continue;
+    }
+
+    // Buscar contas ativas vinculadas ao participante e método de pagamento
+    const [contasRelacionadas] = await connection.query(
+      `SELECT c.id AS id_conta, ca.id AS id_cartao, cmp.id_metodo_pagamento
+       FROM participantes_contas pc
+       JOIN contas c ON pc.id_conta = c.id AND c.ativo = 1
+       LEFT JOIN cartoes ca ON ca.id_conta = c.id AND ca.ativo = 1
+       JOIN contas_metodos_pagamento cmp 
+         ON c.id = cmp.id_conta AND cmp.ativo = 1 AND cmp.id_metodo_pagamento = ?
+       WHERE pc.id_participante = ? 
+         AND pc.ativo = 1`,
+      [metodo_pagamento, participanteId]
+    );
+
+    console.log(`Contas encontradas para participante ID ${participanteId}:`, contasRelacionadas);
+
+    if (contasRelacionadas.length === 0) {
+      throw new Error(`O método de pagamento ${metodo_pagamento} não está vinculado à conta ativa do participante ID ${participanteId}.`);
+    }
+
+    // Validação adicional para cartão de crédito (método 1)
+    if (metodo_pagamento === 1) {
+      // Cartão de Crédito
+      const contaComCartao = contasRelacionadas.find(conta => conta.id_cartao);
+      if (!contaComCartao) {
+        throw new Error(`Nenhum cartão de crédito encontrado para o participante ID ${participanteId}.`);
+      }
+
+      // Verificar se há uma fatura aberta para o período atual
+      const [faturasAbertas] = await connection.query(
+        `SELECT id FROM faturas 
+         WHERE id_cartao = ? 
+           AND status = 'aberta'
+           AND ? BETWEEN data_fechamento AND data_vencimento`,
+        [contaComCartao.id_cartao, new Date()]
+      );
+
+      if (faturasAbertas.length === 0) {
+        throw new Error(`Nenhuma fatura aberta encontrada para o período atual do cartão de crédito do participante ID ${participanteId}.`);
+      }
+
+      console.log(`Fatura válida encontrada para o cartão do participante ID ${participanteId}.`);
+    }
+
+    console.log(`Participante ID ${participanteId} validado com sucesso para o método de pagamento ${metodo_pagamento}.`);
+  }
+}
+
 exports.listarTransacoes = async (req, res) => {
   try {
+    console.log('Listando transações...');
     const [rows] = await db.query(`
       SELECT t.*, 
              GROUP_CONCAT(CONCAT(p.nome, ' (R$ ', tp.valor, ')') SEPARATOR ', ') AS participantes
@@ -13,100 +109,36 @@ exports.listarTransacoes = async (req, res) => {
     `);
     res.json(rows);
   } catch (error) {
+    console.error('Erro ao listar transações:', error);
     res.status(500).json({ error: 'Erro ao listar transações.', details: error.message });
   }
 };
 
 exports.criarTransacao = async (req, res) => {
-  const { descricao, valor, data, metodo_pagamento, categoria, status, participantes } = req.body;
-
-  if (!descricao || !valor || !data || !metodo_pagamento || !participantes || participantes.length === 0) {
-    return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos.' });
-  }
-
   const connection = await db.getConnection();
 
   try {
+    console.log('Iniciando criação de transação...');
+    validarDadosTransacao(req.body);
+    const { descricao, valor, data, metodo_pagamento, categoria, status, participantes } = req.body;
+
     await connection.beginTransaction();
 
-    // Criar a transação principal
     const [transacaoResult] = await connection.query(
       `INSERT INTO transacoes (descricao, valor, data, metodo_pagamento, categoria, status) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [descricao, valor, data, metodo_pagamento, categoria, status]
+       VALUES (?, ?, ?, ?, ?, ?)`
+      , [descricao, valor, data, metodo_pagamento, categoria, status]
     );
+
     const transacaoId = transacaoResult.insertId;
 
-    // Processar os participantes
+    await validarParticipantes(connection, participantes, metodo_pagamento);
+
     for (const participante of participantes) {
-      const { id: participanteId } = participante;
-
-      // Buscar contas ativas vinculadas ao participante
-      const [contasRelacionadas] = await connection.query(
-        `SELECT c.id AS id_conta, ca.id AS id_cartao
-         FROM participantes_contas pc
-         JOIN contas c ON pc.id_conta = c.id AND c.ativo = 1
-         LEFT JOIN cartoes ca ON ca.id_conta = c.id AND ca.ativo = 1
-         LEFT JOIN cartoes_metodos_pagamento cmp ON ca.id = cmp.id_cartao AND cmp.ativo = 1
-         WHERE pc.id_participante = ?`,
-        [participanteId]
-      );
-
-      if (contasRelacionadas.length === 0) {
-        throw new Error(
-          `Nenhuma conta ativa encontrada para o participante ID ${participanteId}.`
-        );
-      }
-
-      // Validação: Método de pagamento "Cartão de Crédito" (ID = 1)
-      if (metodo_pagamento === 1) {
-        const contaComCartao = contasRelacionadas.find((conta) => conta.id_cartao);
-
-        if (!contaComCartao) {
-          throw new Error(
-            `Nenhum cartão encontrado para a conta vinculada ao participante ID ${participanteId}.`
-          );
-        }
-
-        const cartaoId = contaComCartao.id_cartao;
-
-        // Buscar fatura aberta vinculada ao cartão
-        const [faturasAbertas] = await connection.query(
-          `SELECT id, valor_total
-           FROM faturas 
-           WHERE id_cartao = ? 
-           AND data_fechamento <= ? AND data_vencimento > ? 
-           AND status = 'aberta'`,
-          [cartaoId, data, data]
-        );
-
-        if (faturasAbertas.length === 0) {
-          throw new Error(
-            `Nenhuma fatura aberta encontrada para o cartão ID ${cartaoId}.`
-          );
-        }
-
-        const fatura = faturasAbertas[0];
-
-        // Atualizar o valor da fatura com o valor da transação
-        await connection.query(
-          `UPDATE faturas SET valor_total = valor_total + ? WHERE id = ?`,
-          [valor, fatura.id]
-        );
-
-        console.log(`Fatura atualizada: ${fatura.id}`);
-      }
-
-      // Validação: Métodos diferentes de Cartão de Crédito
-      if (metodo_pagamento !== 1) {
-        console.log(`Método de pagamento ${metodo_pagamento} não utiliza fatura.`);
-      }
-
-      // Inserir o participante na transação
       await connection.query(
         `INSERT INTO transacoes_participantes (id_transacao, id_participante, valor) 
-         VALUES (?, ?, ?)`,
-        [transacaoId, participanteId, valor / participantes.length]
+         VALUES (?, ?, ?)`
+        , [transacaoId, participante.id, valor / participantes.length]
       );
     }
 
@@ -121,17 +153,15 @@ exports.criarTransacao = async (req, res) => {
   }
 };
 
-
 exports.atualizarTransacao = async (req, res) => {
   const { id } = req.params;
-  const { descricao, valor, data, metodo_pagamento, categoria, status, participantes } = req.body;
-
-  if (!descricao || !valor || !data || !metodo_pagamento || !categoria || !participantes || participantes.length === 0) {
-    return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos.' });
-  }
-
   const connection = await db.getConnection();
+
   try {
+    console.log(`Iniciando atualização de transação ID ${id}...`);
+    validarDadosTransacao(req.body);
+    const { descricao, valor, data, metodo_pagamento, categoria, status, participantes } = req.body;
+
     await connection.beginTransaction();
 
     await connection.query(
@@ -141,11 +171,12 @@ exports.atualizarTransacao = async (req, res) => {
 
     await connection.query('UPDATE transacoes_participantes SET ativo = 0 WHERE id_transacao = ?', [id]);
 
+    await validarParticipantes(connection, participantes, metodo_pagamento);
+
     for (const participante of participantes) {
-      const valorIndividual = valor / participantes.length;
       await connection.query(
         'INSERT INTO transacoes_participantes (id_transacao, id_participante, valor, ativo) VALUES (?, ?, ?, 1)',
-        [id, participante.id, valorIndividual]
+        [id, participante.id, valor / participantes.length]
       );
     }
 
@@ -153,7 +184,8 @@ exports.atualizarTransacao = async (req, res) => {
     res.json({ message: 'Transação atualizada com sucesso!' });
   } catch (error) {
     await connection.rollback();
-    res.status(500).json({ error: 'Erro ao atualizar transação.', details: error.message });
+    console.error('Erro ao atualizar transação:', error);
+    res.status(400).json({ error: error.message });
   } finally {
     connection.release();
   }
@@ -164,14 +196,24 @@ exports.excluirTransacao = async (req, res) => {
   const connection = await db.getConnection();
 
   try {
+    console.log(`Iniciando exclusão lógica da transação ID ${id}...`);
+
     await connection.beginTransaction();
+
+    const [transacao] = await connection.query('SELECT id FROM transacoes WHERE id = ? AND ativo = 1', [id]);
+    if (transacao.length === 0) {
+      throw new Error('Transação não encontrada ou já excluída.');
+    }
+
     await connection.query('UPDATE transacoes SET ativo = 0 WHERE id = ?', [id]);
     await connection.query('UPDATE transacoes_participantes SET ativo = 0 WHERE id_transacao = ?', [id]);
+
     await connection.commit();
     res.json({ message: 'Transação excluída logicamente!' });
   } catch (error) {
     await connection.rollback();
-    res.status(500).json({ error: 'Erro ao excluir transação.', details: error.message });
+    console.error('Erro ao excluir transação:', error);
+    res.status(400).json({ error: error.message });
   } finally {
     connection.release();
   }
