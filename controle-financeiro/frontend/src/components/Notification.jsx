@@ -1,7 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import PropTypes from 'prop-types';
 
-const Notification = ({ tipo, titulo, mensagem, onClose }) => {
+const Notification = ({ tipo, titulo, mensagem, onClose, duration = 2000 }) => {
+  useEffect(() => {
+    // Configura o timer para fechar a notificação
+    const timer = setTimeout(() => {
+      onClose();
+    }, duration);
+
+    // Limpa o timer se o componente for desmontado
+    return () => clearTimeout(timer);
+  }, [onClose, duration]);
+
   const getStyles = () => {
     switch (tipo) {
       case 'participante':
@@ -58,11 +68,13 @@ Notification.propTypes = {
   tipo: PropTypes.oneOf(['participante', 'conta', 'cartao', 'fatura', 'erro', 'validacao', 'sucesso']).isRequired,
   titulo: PropTypes.string,
   mensagem: PropTypes.string.isRequired,
-  onClose: PropTypes.func.isRequired
+  onClose: PropTypes.func.isRequired,
+  duration: PropTypes.number
 };
 
 Notification.defaultProps = {
-  titulo: ''
+  titulo: '',
+  duration: 2000 // 2 segundos por padrão
 };
 
 export default Notification;

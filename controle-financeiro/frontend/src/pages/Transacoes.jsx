@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import api from '../services/api';
 import Input from '../components/Input';
 import Modal from '../components/Modal';
@@ -25,6 +25,8 @@ const Transacoes = () => {
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
 
+  const descricaoInputRef = useRef(null);
+
   // Buscar transações, participantes e métodos de pagamento
   useEffect(() => {
     const fetchDados = async () => {
@@ -50,17 +52,41 @@ const Transacoes = () => {
     fetchDados();
   }, []);
 
-  // Resetar campos ao abrir o modal para nova transação
-  const handleNewTransaction = () => {
+  const resetForm = () => {
+    const dataAtual = new Date().toISOString().split('T')[0];
+    
     setDescricao('');
     setValor('');
-    setData('');
+    setData(dataAtual);
+    setMetodoPagamento('');
+    setCategoria('');
+    setStatus('pendente');
+    setParticipantesSelecionados([]);
+    setIdEdicao(null);
+
+    // Foca no campo de descrição
+    setTimeout(() => {
+      descricaoInputRef.current?.focus();
+    }, 100);
+  };
+
+  // Resetar campos ao abrir o modal para nova transação
+  const handleNewTransaction = () => {
+    const dataAtual = new Date().toISOString().split('T')[0];
+    
+    setDescricao('');
+    setValor('');
+    setData(dataAtual);
     setMetodoPagamento('');
     setCategoria('');
     setStatus('pendente');
     setParticipantesSelecionados([]);
     setIdEdicao(null);
     setModalOpen(true);
+
+    setTimeout(() => {
+      descricaoInputRef.current?.focus();
+    }, 100);
   };
 
   // Adicionar ou Editar Transação
@@ -97,6 +123,7 @@ const Transacoes = () => {
           titulo: 'Sucesso',
           mensagem: 'Transação atualizada com sucesso!'
         });
+        setModalOpen(false);
       } else {
         await api.post('/transacoes', transacao);
         setNotification({
@@ -104,17 +131,18 @@ const Transacoes = () => {
           titulo: 'Sucesso',
           mensagem: 'Transação criada com sucesso!'
         });
+        resetForm();
       }
 
       const response = await api.get('/transacoes');
       setTransacoes(response.data);
-      setModalOpen(false);
     } catch (error) {
       console.error('Erro ao salvar transação:', error);
       const errorInfo = processarErroAPI(error);
       setNotification(errorInfo);
     }
   };
+
   // Editar Transação
   const handleEdit = (transacao) => {
     setIdEdicao(transacao.id);
@@ -133,6 +161,10 @@ const Transacoes = () => {
       : [];
     setParticipantesSelecionados(participantesCorrigidos);
     setModalOpen(true);
+
+    setTimeout(() => {
+      descricaoInputRef.current?.focus();
+    }, 100);
   };
 
   // Excluir Transação
@@ -225,6 +257,7 @@ const Transacoes = () => {
         onConfirm={handleSubmit}
       >
         <Input 
+          ref={descricaoInputRef}
           label="Descrição" 
           value={descricao} 
           onChange={(e) => setDescricao(e.target.value)} 
