@@ -23,6 +23,22 @@ function validarDadosTransacao(dados) {
   if (!participantes || !Array.isArray(participantes) || participantes.length === 0) {
     throw new Error('Participantes inválidos. Deve ser uma lista de participantes.');
   }
+
+  // Nova validação para valores individuais
+  const temValoresIndividuais = participantes.some(p => p.valor !== undefined);
+  if (temValoresIndividuais) {
+    const somaValores = participantes.reduce((sum, p) => sum + Number(p.valor), 0);
+    // Usando toFixed(2) para comparar com duas casas decimais
+    if (Number(somaValores.toFixed(2)) !== Number(Number(valor).toFixed(2))) {
+      throw new Error('A soma dos valores individuais não corresponde ao valor total da transação.');
+    }
+    // Validar valores individuais
+    for (const participante of participantes) {
+      if (isNaN(Number(participante.valor)) || Number(participante.valor) <= 0) {
+        throw new Error('Valor individual inválido para um dos participantes.');
+      }
+    }
+  }
 }
 
 // Função utilitária para validação de participantes e seleção de contas
@@ -42,13 +58,11 @@ async function validarParticipantes(connection, participantes, metodo_pagamento)
 
     const { usa_conta } = dadosParticipante[0];
 
-    // Se o participante não usa conta, pular validações relacionadas a contas
     if (usa_conta === 0) {
       console.log(`Participante ID ${participanteId} não usa conta. Pulando validações de contas.`);
       continue;
     }
 
-    // Buscar contas ativas vinculadas ao participante e método de pagamento
     const [contasRelacionadas] = await connection.query(
       `SELECT c.id AS id_conta, ca.id AS id_cartao, cmp.id_metodo_pagamento
        FROM participantes_contas pc
@@ -67,15 +81,12 @@ async function validarParticipantes(connection, participantes, metodo_pagamento)
       throw new Error(`O método de pagamento ${metodo_pagamento} não está vinculado à conta ativa do participante ID ${participanteId}.`);
     }
 
-    // Validação adicional para cartão de crédito (método 1)
     if (metodo_pagamento === 1) {
-      // Cartão de Crédito
       const contaComCartao = contasRelacionadas.find(conta => conta.id_cartao);
       if (!contaComCartao) {
         throw new Error(`Nenhum cartão de crédito encontrado para o participante ID ${participanteId}.`);
       }
 
-      // Verificar se há uma fatura aberta para o período atual
       const [faturasAbertas] = await connection.query(
         `SELECT id FROM faturas 
          WHERE id_cartao = ? 
@@ -134,11 +145,16 @@ exports.criarTransacao = async (req, res) => {
 
     await validarParticipantes(connection, participantes, metodo_pagamento);
 
+    // Lógica atualizada para inserção dos valores dos participantes
     for (const participante of participantes) {
+      const valorParticipante = participante.valor !== undefined 
+        ? participante.valor 
+        : valor / participantes.length;
+
       await connection.query(
         `INSERT INTO transacoes_participantes (id_transacao, id_participante, valor) 
          VALUES (?, ?, ?)`
-        , [transacaoId, participante.id, valor / participantes.length]
+        , [transacaoId, participante.id, Number(valorParticipante).toFixed(2)]
       );
     }
 
@@ -173,10 +189,15 @@ exports.atualizarTransacao = async (req, res) => {
 
     await validarParticipantes(connection, participantes, metodo_pagamento);
 
+    // Lógica atualizada para inserção dos valores dos participantes
     for (const participante of participantes) {
+      const valorParticipante = participante.valor !== undefined 
+        ? participante.valor 
+        : valor / participantes.length;
+
       await connection.query(
         'INSERT INTO transacoes_participantes (id_transacao, id_participante, valor, ativo) VALUES (?, ?, ?, 1)',
-        [id, participante.id, valor / participantes.length]
+        [id, participante.id, Number(valorParticipante).toFixed(2)]
       );
     }
 
