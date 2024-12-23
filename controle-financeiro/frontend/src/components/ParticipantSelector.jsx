@@ -1,3 +1,4 @@
+// ParticipantSelector.js (Atualizado)
 import React from 'react';
 
 const ParticipantSelector = ({ 
@@ -68,18 +69,18 @@ const ParticipantSelector = ({
             key={p.id} 
             className={`flex items-center p-2 rounded-lg cursor-pointer transition-colors
               ${isSelecionado 
-                ? 'bg-blue-100 text-blue-800' 
+                ? 'bg-blue-100 border border-blue-500 text-blue-800' 
                 : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}
             onClick={() => handleSelecionar(p)}
           >
-            <span className="flex-grow">{p.nome}</span>
+            <span className="flex-grow font-medium">{p.nome}</span>
             {modoDistribuicao === 'individual' && isSelecionado && (
               <input
                 type="text"
                 value={valoresIndividuais[p.id] || ''}
                 onChange={(e) => {
                   const value = e.target.value.replace(/[^\d,]/g, '');
-                  if (value === '' || /^\d*[,]?\d{0,2}$/.test(value)) {
+                  if (value === '' || /^\d*[\,]?\d{0,2}$/.test(value)) {
                     onChangeValores({
                       ...valoresIndividuais,
                       [p.id]: value
@@ -87,7 +88,7 @@ const ParticipantSelector = ({
                   }
                 }}
                 onClick={(e) => e.stopPropagation()}
-                className="w-24 px-2 py-1 text-right bg-white border rounded"
+                className="w-24 px-2 py-1 text-right bg-white border rounded shadow-sm"
                 placeholder="0,00"
               />
             )}
