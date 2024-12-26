@@ -16,7 +16,7 @@ const transacoesRoutes = require('./routes/transacoesRoutes');
 const faturasRoutes = require('./routes/faturasRoutes');
 const metodosPagamentoRoutes = require('./routes/metodosPagamentoRoutes');
 const cartoesRoutes = require('./routes/cartoesRoutes');
-
+const pagamentosRoutes = require('./routes/pagamentosRoutes');
 
 // Configurar as rotas
 app.use('/usuarios', usuariosRoutes);
@@ -26,6 +26,7 @@ app.use('/transacoes', transacoesRoutes);
 app.use('/faturas', faturasRoutes);
 app.use('/metodos_pagamento', metodosPagamentoRoutes);
 app.use('/cartoes', cartoesRoutes);
+app.use('/pagamentos', pagamentosRoutes);
 
 // Teste de conexão com o banco de dados
 db.getConnection()

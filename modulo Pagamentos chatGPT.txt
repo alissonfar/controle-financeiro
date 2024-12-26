@@ -1,0 +1,155 @@
+Documentação do Módulo de Pagamentos
+
+1. Introdução
+
+O módulo de pagamentos foi projetado para registrar transações financeiras, vinculando-as a participantes e, opcionalmente, às suas contas. Ele permite gerenciar pagamentos de forma flexível, considerando cenários com ou sem contas associadas aos participantes.
+
+2. Estrutura do Banco de Dados
+
+Tabela pagamentos
+
+Tabela principal para registrar pagamentos.
+
+CREATE TABLE pagamentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    descricao VARCHAR(255) NOT NULL,
+    valor_total DECIMAL(10, 2) NOT NULL,
+    tipo ENUM('NORMAL', 'COMPENSATORIO') NOT NULL,
+    metodo_pagamento ENUM('DINHEIRO', 'PIX', 'TRANSFERENCIA', 'CARTAO', 'OUTROS') NOT NULL,
+    conta_id INT NULL,
+    usuario_origem_id INT NULL,
+    participante_destino_id INT NOT NULL,
+    conta_destino_id INT NULL,
+    saldo_conta_pre DECIMAL(10, 2) NULL,
+    saldo_conta_pos DECIMAL(10, 2) NULL,
+    saldo_destino_pre DECIMAL(10, 2) NULL,
+    saldo_destino_pos DECIMAL(10, 2) NULL,
+    status ENUM('ATIVO', 'ESTORNADO') NOT NULL DEFAULT 'ATIVO',
+    data_estorno DATETIME NULL,
+    motivo_estorno VARCHAR(255) NULL,
+    comprovante VARCHAR(255) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (conta_id) REFERENCES contas(id) ON DELETE SET NULL,
+    FOREIGN KEY (usuario_origem_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+    FOREIGN KEY (participante_destino_id) REFERENCES participantes(id) ON DELETE CASCADE,
+    FOREIGN KEY (conta_destino_id) REFERENCES contas(id) ON DELETE SET NULL
+);
+
+Tabela pagamentos_transacoes
+
+Tabela auxiliar para vincular pagamentos a transações.
+
+CREATE TABLE pagamentos_transacoes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    pagamento_id INT NOT NULL,
+    transacao_id INT NOT NULL,
+    valor_vinculado DECIMAL(10, 2) NOT NULL,
+    status_transacao_pre ENUM('pendente', 'pago parcial', 'pago total') NOT NULL,
+    status_transacao_pos ENUM('pendente', 'pago parcial', 'pago total') NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (pagamento_id) REFERENCES pagamentos(id) ON DELETE CASCADE,
+    FOREIGN KEY (transacao_id) REFERENCES transacoes(id) ON DELETE CASCADE
+);
+
+3. Funcionalidades Implementadas
+
+3.1. Endpoint createPagamento
+
+Rota: POST /pagamentos
+
+Descrição: Cria um novo pagamento e vincula, opcionalmente, transações associadas.
+
+Fluxo da Implementação
+
+Validação dos Dados:
+
+Verifica se os campos obrigatórios (descricao, valor_total, metodo_pagamento, participante_destino_id) estão presentes.
+
+Valida se o participante de destino está ativo e, se necessário, valida a conta de destino.
+
+Processamento de Saldos:
+
+Se uma conta de origem for fornecida, calcula os saldos pré e pós do pagamento.
+
+Caso o participante de destino utilize conta, calcula os saldos de destino.
+
+Registro no Banco de Dados:
+
+Insere o pagamento na tabela pagamentos.
+
+Atualiza os saldos das contas, se aplicável.
+
+Vinculação de Transações:
+
+Valida se cada transação fornecida no payload está pendente, parcialmente paga ou completamente paga.
+
+Soma os valores pagos e compara com o valor total da transação para determinar o novo status:
+
+pendente: Nenhum valor foi pago ainda.
+
+pago parcial: O valor acumulado é menor que o total.
+
+pago total: O valor acumulado é igual ou maior ao total.
+
+Atualiza o status da transação no banco.
+
+Retorno:
+
+Retorna os detalhes do pagamento criado e as transações vinculadas com seus novos status.
+
+Exemplo de Payload
+
+{
+  "descricao": "Pagamento de serviço",
+  "valor_total": 66,
+  "tipo": "NORMAL",
+  "metodo_pagamento": "PIX",
+  "participante_destino_id": 1,
+  "conta_destino_id": 1,
+  "transacoes": [
+    { "id": 118, "valor": 66 }
+  ]
+}
+
+Resposta de Sucesso
+
+{
+  "message": "Pagamento criado com sucesso!",
+  "pagamento": {
+    "id": 27,
+    "descricao": "Pagamento TRANSACAO 118",
+    "valor_total": 66,
+    "saldo_pre_origem": null,
+    "saldo_pos_origem": null,
+    "saldo_pre_destino": "5000.00",
+    "saldo_pos_destino": "5066.00",
+    "transacoes": [
+      { "id": 118, "valor": 66, "status": "pago parcial" }
+    ]
+  }
+}
+
+4. Próximos Passos
+
+Estornar Pagamento:
+
+Criar endpoint para reverter um pagamento e restaurar os saldos originais.
+
+Listar Pagamentos:
+
+Implementar funcionalidade para filtrar e paginar pagamentos registrados.
+
+Gerenciamento de Comprovantes:
+
+Permitir upload e visualização de comprovantes associados aos pagamentos.
+
+5. Considerações
+
+O sistema está preparado para lidar com participantes que utilizam ou não contas.
+
+As tabelas estão projetadas para manter a integridade referencial e facilitar a manutenção de registros históricos.
+
+A lógica de vinculação de transações agora é robusta, considerando pagamentos parciais e múltiplos vínculos.
+
