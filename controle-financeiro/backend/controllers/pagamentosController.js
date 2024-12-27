@@ -202,3 +202,80 @@ exports.createPagamento = async (req, res) => {
   }
 };
 
+
+// Função para estornar pagamento
+exports.estornarPagamento = async (req, res) => {
+  const { id } = req.params; // ID do pagamento a ser estornado
+  const { motivo_estorno, comprovante } = req.body; // Dados enviados no payload
+
+  try {
+      // Verifica se o pagamento existe e está ativo
+      const [pagamento] = await db.query('SELECT * FROM pagamentos WHERE id = ? AND status = "ATIVO"', [id]);
+      if (!pagamento) {
+          return res.status(404).json({ message: 'Pagamento não encontrado ou já estornado.' });
+      }
+
+      // Verifica se o motivo do estorno foi fornecido
+      if (!motivo_estorno) {
+          return res.status(400).json({ message: 'Motivo do estorno é obrigatório.' });
+      }
+
+      // Obtém as transações vinculadas ao pagamento
+      const [transacoes] = await db.query('SELECT * FROM pagamentos_transacoes WHERE pagamento_id = ?', [id]);
+
+      // Reverte os saldos das contas (se aplicável)
+      if (pagamento.conta_id) {
+          await db.query(
+              'UPDATE contas SET saldo = saldo + ? WHERE id = ?',
+              [pagamento.valor_total, pagamento.conta_id]
+          );
+      }
+
+      if (pagamento.conta_destino_id) {
+          await db.query(
+              'UPDATE contas SET saldo = saldo - ? WHERE id = ?',
+              [pagamento.valor_total, pagamento.conta_destino_id]
+          );
+      }
+
+      // Atualiza o status das transações vinculadas
+      const transacoesFormatadas = transacoes.map(transacao => ({
+          id: transacao.transacao_id,
+          valor: transacao.valor_vinculado,
+          status: transacao.status_transacao_pos,
+          created_at: transacao.created_at,
+          updated_at: transacao.updated_at
+      }));
+
+      for (const transacao of transacoes) {
+          await db.query(
+              'UPDATE transacoes SET status = "pendente" WHERE id = ?',
+              [transacao.transacao_id]
+          );
+      }
+
+      // Atualiza o status do pagamento para "ESTORNADO"
+      await db.query(
+          'UPDATE pagamentos SET status = "ESTORNADO", data_estorno = NOW(), motivo_estorno = ?, comprovante = ? WHERE id = ?',
+          [motivo_estorno, comprovante || null, id]
+      );
+
+      // Retorna a resposta ao cliente
+      res.json({
+          message: 'Pagamento estornado com sucesso!',
+          pagamento: {
+              id,
+              descricao: pagamento.descricao,
+              valor_total: pagamento.valor_total,
+              status: "ESTORNADO",
+              data_estorno: new Date().toISOString(),
+              motivo_estorno,
+              comprovante: comprovante || null,
+              transacoes: transacoesFormatadas
+          }
+      });
+  } catch (error) {
+      console.error('Erro ao processar o estorno:', error);
+      res.status(500).json({ message: 'Erro ao processar o estorno do pagamento.' });
+  }
+};
