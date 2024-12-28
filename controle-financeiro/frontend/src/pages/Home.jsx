@@ -55,6 +55,12 @@ const Home = () => {
       subtitle: 'Módulo para gerenciar métodos de pagamento.',
       link: '/metodos_pagamento',
     },
+    {
+      icon: <FiDollarSign className="w-7 h-7 text-azul-600" />,
+      title: 'Gerenciar Pagamentos',
+      subtitle: 'Módulo para gerenciar pagamentos.',
+      link: '/pagamentos',
+    },
   ];
 
   return (
