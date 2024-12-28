@@ -312,52 +312,57 @@ exports.listarPagamentos = async (req, res) => {
   const { page = 1, limit = 10, status, metodo_pagamento, participante_destino_id, start_date, end_date } = req.query;
 
   try {
-      // Configuração de paginação
-      const offset = (page - 1) * limit;
+    // Configuração de paginação padrão
+    const offset = (page - 1) * limit;
 
-      // Construção da query com filtros opcionais
-      let query = 'SELECT * FROM pagamentos WHERE 1=1';
-      const params = [];
+    // Construção da query inicial
+    let query = 'SELECT * FROM pagamentos WHERE 1=1'; // Sempre retorna algo
+    const params = [];
 
-      if (status) {
-          query += ' AND status = ?';
-          params.push(status);
-      }
+    // Aplicar filtros opcionais
+    if (status) {
+      query += ' AND status = ?';
+      params.push(status);
+    }
 
-      if (metodo_pagamento) {
-          query += ' AND metodo_pagamento = ?';
-          params.push(metodo_pagamento);
-      }
+    if (metodo_pagamento) {
+      query += ' AND metodo_pagamento = ?';
+      params.push(metodo_pagamento);
+    }
 
-      if (participante_destino_id) {
-          query += ' AND participante_destino_id = ?';
-          params.push(participante_destino_id);
-      }
+    if (participante_destino_id) {
+      query += ' AND participante_destino_id = ?';
+      params.push(participante_destino_id);
+    }
 
-      if (start_date && end_date) {
-          query += ' AND created_at BETWEEN ? AND ?';
-          params.push(start_date, end_date);
-      }
+    if (start_date && end_date) {
+      query += ' AND created_at BETWEEN ? AND ?';
+      params.push(start_date, end_date);
+    }
 
-      query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-      params.push(parseInt(limit), parseInt(offset));
+    // Adicionar ordenação e paginação
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), parseInt(offset));
 
-      // Executa a consulta
-      const [result] = await db.query(query, params);
+    // Log para depuração
+    console.log('Executando query:', query, 'com parâmetros:', params);
 
-      // Conta total de registros para paginação
-      const [countResult] = await db.query('SELECT COUNT(*) AS total FROM pagamentos WHERE 1=1', params.slice(0, -2));
-      const total = countResult[0].total;
+    // Executar a consulta no banco de dados
+    const [result] = await db.query(query, params);
 
-      // Resposta com paginação
-      res.json({
-          current_page: parseInt(page),
-          per_page: parseInt(limit),
-          total,
-          data: result
-      });
+    // Contar total de registros (para paginação)
+    const [countResult] = await db.query('SELECT COUNT(*) AS total FROM pagamentos WHERE 1=1', params.slice(0, -2));
+    const total = countResult[0]?.total || 0;
+
+    // Responder com os dados
+    res.json({
+      current_page: parseInt(page),
+      per_page: parseInt(limit),
+      total,
+      data: result,
+    });
   } catch (error) {
-      console.error('Erro ao listar pagamentos:', error);
-      res.status(500).json({ message: 'Erro ao listar pagamentos.' });
+    console.error('Erro ao listar pagamentos:', error); // Log do erro
+    res.status(500).json({ message: 'Erro ao listar pagamentos.' });
   }
 };

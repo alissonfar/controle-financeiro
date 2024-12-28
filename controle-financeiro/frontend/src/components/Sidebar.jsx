@@ -1,6 +1,15 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FiUsers, FiCreditCard, FiFileText, FiDollarSign, FiLayers, FiSettings, FiHome } from 'react-icons/fi';
+import {
+  FiUsers,
+  FiCreditCard,
+  FiFileText,
+  FiDollarSign,
+  FiLayers,
+  FiSettings,
+  FiHome,
+  FiBookOpen
+} from 'react-icons/fi';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
   return (
@@ -42,11 +51,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
             </Link>
           </li>
           <li>
-          <Link to="contas" className="flex items-center gap-3 px-4 py-2 rounded hover:bg-azul-600">
-            <FiLayers className="text-lg" />
-            <span>Gerenciar Contas</span>
-          </Link>
-
+            <Link
+              to="contas"
+              className="flex items-center gap-3 px-4 py-2 rounded hover:bg-azul-600 hover:shadow-lg transition-all"
+            >
+              <FiLayers className="text-lg" />
+              <span>Gerenciar Contas</span>
+            </Link>
           </li>
           <li>
             <Link
@@ -91,6 +102,15 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
             >
               <FiSettings className="text-lg" />
               <span>Métodos de Pagamento</span>
+            </Link>
+          </li>
+          <li>
+            <Link
+              to="pagamentos"
+              className="flex items-center gap-3 px-4 py-2 rounded hover:bg-azul-600 hover:shadow-lg transition-all"
+            >
+              <FiBookOpen className="text-lg" />
+              <span>Gerenciar Pagamentos</span>
             </Link>
           </li>
         </ul>
