@@ -344,8 +344,6 @@ exports.listarPagamentos = async (req, res) => {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));
 
-    // Log para depuração
-    console.log('Executando query:', query, 'com parâmetros:', params);
 
     // Executar a consulta no banco de dados
     const [result] = await db.query(query, params);
