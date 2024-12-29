@@ -19,15 +19,12 @@ import {
 } from 'lucide-react';
 
 const Transacoes = () => {
-  // Estados existentes - mantidos sem alteração
   const [transacoes, setTransacoes] = useState([]);
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
   const [data, setData] = useState('');
   const [metodoPagamento, setMetodoPagamento] = useState('');
   const [categoria, setCategoria] = useState('');
-  const [status, setStatus] = useState('pendente');
-  const [idEdicao, setIdEdicao] = useState(null);
   const [participantes, setParticipantes] = useState([]);
   const [participantesSelecionados, setParticipantesSelecionados] = useState([]);
   const [valoresIndividuais, setValoresIndividuais] = useState({});
@@ -35,7 +32,10 @@ const Transacoes = () => {
   const [metodosPagamento, setMetodosPagamento] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalConfirm, setModalConfirm] = useState(false);
+  const [modalEstornoOpen, setModalEstornoOpen] = useState(false);
   const [selectedTransacao, setSelectedTransacao] = useState(null);
+  const [motivoEstorno, setMotivoEstorno] = useState('');
+  const [idUsuarioEstorno, setIdUsuarioEstorno] = useState('');
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [showTransactionsList, setShowTransactionsList] = useState(true);
@@ -43,7 +43,6 @@ const Transacoes = () => {
 
   const descricaoInputRef = useRef(null);
 
-  // Funções de controle - mantidas sem alteração
   const toggleTransactionsList = () => {
     setShowTransactionsList(prev => !prev);
   };
@@ -55,7 +54,85 @@ const Transacoes = () => {
       [id]: !prev[id]
     }));
   };
-  // Efeito de carregamento inicial - mantido sem alteração
+
+  const handleSubmit = async () => {
+    if (!descricao || !valor || !data || !metodoPagamento || !categoria || participantesSelecionados.length === 0) {
+      setNotification({
+        tipo: 'erro',
+        titulo: 'Campos Obrigatórios',
+        mensagem: 'Por favor, preencha todos os campos antes de cadastrar.'
+      });
+      return;
+    }
+  
+    try {
+      const participantesComValores = participantesSelecionados.map((p) => ({
+        id: p.id,
+        valor: modoDistribuicao === 'igual'
+          ? (valor / participantesSelecionados.length).toFixed(2)
+          : valoresIndividuais[p.id].replace(',', '.')
+      }));
+  
+      await api.post('/transacoes', {
+        descricao,
+        valor: parseFloat(valor.replace(',', '.')),
+        data,
+        metodo_pagamento: metodoPagamento,
+        categoria,
+        status: 'pendente', // Define explicitamente o status como "pendente"
+        participantes: participantesComValores
+      });
+  
+      setNotification({
+        tipo: 'sucesso',
+        titulo: 'Sucesso',
+        mensagem: 'Transação cadastrada com sucesso!'
+      });
+      setModalOpen(false);
+      resetForm();
+      const response = await api.get('/transacoes');
+      setTransacoes(response.data);
+    } catch (error) {
+      console.error('Erro ao cadastrar transação:', error);
+      const errorInfo = processarErroAPI(error);
+      setNotification(errorInfo);
+    }
+  };
+  
+
+  const handleEstorno = async () => {
+    if (selectedTransacao.status !== 'pendente') {
+      setNotification({
+        tipo: 'erro',
+        titulo: 'Estorno não permitido',
+        mensagem: 'A transação só pode ser estornada se estiver no status "pendente".'
+      });
+      return;
+    }
+
+    try {
+      await api.put(`/transacoes/${selectedTransacao.id}/estornar`, {
+        motivo: motivoEstorno,
+        id_usuario: idUsuarioEstorno || null
+      });
+      setNotification({
+        tipo: 'sucesso',
+        titulo: 'Sucesso',
+        mensagem: 'Transação estornada com sucesso!'
+      });
+
+      const response = await api.get('/transacoes');
+      setTransacoes(response.data);
+      setModalEstornoOpen(false);
+      setMotivoEstorno('');
+      setIdUsuarioEstorno('');
+    } catch (error) {
+      console.error('Erro ao estornar transação:', error);
+      const errorInfo = processarErroAPI(error);
+      setNotification(errorInfo);
+    }
+  };
+
   useEffect(() => {
     const fetchDados = async () => {
       setLoading(true);
@@ -89,11 +166,9 @@ const Transacoes = () => {
     setData(dataAtual);
     setMetodoPagamento('');
     setCategoria('');
-    setStatus('pendente');
     setParticipantesSelecionados([]);
     setValoresIndividuais({});
     setModoDistribuicao('igual');
-    setIdEdicao(null);
 
     setTimeout(() => {
       descricaoInputRef.current?.focus();
@@ -113,152 +188,21 @@ const Transacoes = () => {
     return parseFloat(valor.replace(',', '.')) || 0;
   };
 
-  // Função auxiliar para formatar o status com cor
   const getStatusConfig = (status) => {
     switch (status) {
-      case 'concluido':
-        return { color: 'bg-green-100 text-green-800', text: 'Concluído' };
+      case 'pago parcialmente':
+        return { color: 'bg-yellow-100 text-yellow-800', text: 'Pago Parcialmente' };
+      case 'pago total':
+        return { color: 'bg-green-100 text-green-800', text: 'Pago Total' };
       case 'pendente':
-        return { color: 'bg-yellow-100 text-yellow-800', text: 'Pendente' };
-      case 'cancelado':
-        return { color: 'bg-red-100 text-red-800', text: 'Cancelado' };
+        return { color: 'bg-orange-100 text-orange-800', text: 'Pendente' };
+      case 'estornado':
+        return { color: 'bg-gray-100 text-gray-800', text: 'Estornado' };
       default:
         return { color: 'bg-gray-100 text-gray-800', text: status };
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-  
-    if (!descricao || !valor || !data || participantesSelecionados.length === 0 || !metodoPagamento || !categoria) {
-      setNotification({
-        tipo: 'validacao',
-        titulo: 'Campos Obrigatórios',
-        mensagem: 'Por favor, preencha todos os campos obrigatórios.'
-      });
-      return;
-    }
-
-    const valorTotal = parseFloat(valor.replace(',', '.'));
-
-    if (modoDistribuicao === 'individual') {
-      const somaValores = calcularValorTotal();
-      if (Math.abs(somaValores - valorTotal) > 0.01) {
-        setNotification({
-          tipo: 'erro',
-          titulo: 'Erro na Divisão',
-          mensagem: 'A soma dos valores individuais deve ser igual ao valor total.'
-        });
-        return;
-      }
-    }
-
-    const participantesComValores = participantesSelecionados.map((p) => {
-      if (modoDistribuicao === 'igual') {
-        return {
-          id: p.id,
-          usa_conta: p.usa_conta || false,
-          valor: Number((valorTotal / participantesSelecionados.length).toFixed(2))
-        };
-      } else {
-        return {
-          id: p.id,
-          usa_conta: p.usa_conta || false,
-          valor: Number(parseFloat(valoresIndividuais[p.id].replace(',', '.')).toFixed(2))
-        };
-      }
-    });
-    const transacao = {
-      descricao,
-      valor: valorTotal,
-      data,
-      metodo_pagamento: metodoPagamento,
-      categoria,
-      status,
-      participantes: participantesComValores,
-    };
-
-    try {
-      if (idEdicao) {
-        await api.put(`/transacoes/${idEdicao}`, transacao);
-        setNotification({
-          tipo: 'sucesso',
-          titulo: 'Sucesso',
-          mensagem: 'Transação atualizada com sucesso!'
-        });
-        setModalOpen(false);
-      } else {
-        await api.post('/transacoes', transacao);
-        setNotification({
-          tipo: 'sucesso',
-          titulo: 'Sucesso',
-          mensagem: 'Transação criada com sucesso!'
-        });
-        resetForm();
-      }
-
-      const response = await api.get('/transacoes');
-      setTransacoes(response.data);
-    } catch (error) {
-      console.error('Erro ao salvar transação:', error);
-      const errorInfo = processarErroAPI(error);
-      setNotification(errorInfo);
-    }
-  };
-
-  const handleEdit = (transacao) => {
-    setIdEdicao(transacao.id);
-    setDescricao(transacao.descricao || '');
-    setValor(transacao.valor?.toString().replace('.', ',') || '');
-    setData(transacao.data ? transacao.data.split('T')[0] : '');
-    setMetodoPagamento(transacao.metodo_pagamento || '');
-    setCategoria(transacao.categoria || '');
-    setStatus(transacao.status || 'pendente');
-
-    const participantesCorrigidos = Array.isArray(transacao.participantes) 
-      ? transacao.participantes.map(p => ({
-          id: p.id,
-          usa_conta: p.usa_conta || false,
-          valor: p.valor
-        })) 
-      : [];
-    
-    setParticipantesSelecionados(participantesCorrigidos);
-    
-    const valores = {};
-    participantesCorrigidos.forEach(p => {
-      valores[p.id] = p.valor?.toString().replace('.', ',') || '';
-    });
-    setValoresIndividuais(valores);
-    setModoDistribuicao(Object.keys(valores).length > 0 ? 'individual' : 'igual');
-    
-    setModalOpen(true);
-
-    setTimeout(() => {
-      descricaoInputRef.current?.focus();
-    }, 100);
-  };
-
-  const handleDelete = async () => {
-    try {
-      await api.delete(`/transacoes/${selectedTransacao}`);
-      setNotification({
-        tipo: 'sucesso',
-        titulo: 'Sucesso',
-        mensagem: 'Transação excluída com sucesso!'
-      });
-      setModalConfirm(false);
-
-      const response = await api.get('/transacoes');
-      setTransacoes(response.data);
-    } catch (error) {
-      console.error('Erro ao excluir transação:', error);
-      const errorInfo = processarErroAPI(error);
-      setNotification(errorInfo);
-    }
-  };
-
-  // Início do JSX com as novas modificações
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -281,7 +225,6 @@ const Transacoes = () => {
         </button>
       </div>
 
-      {/* Novo posicionamento do botão de adicionar transação */}
       <div className="flex justify-center mb-6">
         <button
           onClick={handleNewTransaction}
@@ -379,32 +322,18 @@ const Transacoes = () => {
                           </div>
                         )}
                       </div>
-                      
                       <div className="flex gap-2 ml-4">
                         <button
-                          onClick={() => handleEdit(transacao)}
-                          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 
-                                   transition-colors flex items-center gap-1"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                          Editar
-                        </button>
-                        <button
                           onClick={() => {
-                            setSelectedTransacao(transacao.id);
-                            setModalConfirm(true);
+                            setSelectedTransacao(transacao);
+                            setModalEstornoOpen(true);
                           }}
-                          className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 
-                                   transition-colors flex items-center gap-1"
+                          className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-1"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
-                          Excluir
+                          Estornar
                         </button>
                       </div>
                     </div>
@@ -415,11 +344,12 @@ const Transacoes = () => {
           )}
         </ul>
       )}
+
       <Modal
         isOpen={modalOpen}
-        title={idEdicao ? 'Editar Transação' : 'Cadastrar Transação'}
+        title="Cadastrar Transação"
         onClose={() => setModalOpen(false)}
-        confirmText={idEdicao ? 'Atualizar' : 'Cadastrar'}
+        confirmText="Cadastrar"
         onConfirm={handleSubmit}
       >
         <Input 
@@ -481,7 +411,7 @@ const Transacoes = () => {
             onChange={setParticipantesSelecionados}
             modoDistribuicao={modoDistribuicao}
             valoresIndividuais={valoresIndividuais}
-            onChangeValores={setValoresIndividuais}
+            onChangeValores={            setValoresIndividuais}
             valor={valor}
           />
 
@@ -522,32 +452,39 @@ const Transacoes = () => {
           onChange={(e) => setCategoria(e.target.value)} 
           required 
         />
-
-        <div className="mb-4">
-          <label className="block text-gray-700 font-medium mb-2">
-            Status:
-          </label>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-gray-700"
-          >
-            <option value="pendente">Pendente</option>
-            <option value="concluido">Concluído</option>
-            <option value="cancelado">Cancelado</option>
-          </select>
-        </div>
       </Modal>
 
+      {/* Modal de Estorno */}
       <Modal
-        isOpen={modalConfirm}
-        title="Confirmação de Exclusão"
-        onClose={() => setModalConfirm(false)}
-        confirmText="Excluir"
-        onConfirm={handleDelete}
+        isOpen={modalEstornoOpen}
+        title="Registrar Estorno"
+        onClose={() => {
+          setModalEstornoOpen(false);
+          setMotivoEstorno('');
+          setIdUsuarioEstorno('');
+        }}
+        confirmText="Confirmar Estorno"
+        onConfirm={handleEstorno}
       >
-        <p className="text-gray-700">
-          Tem certeza que deseja excluir esta transação? Esta ação não poderá ser desfeita.
+        <div className="mb-4">
+          <Input
+            label="Motivo do Estorno"
+            value={motivoEstorno}
+            onChange={(e) => setMotivoEstorno(e.target.value)}
+            placeholder="Descreva o motivo do estorno"
+            required
+          />
+        </div>
+        <div className="mb-4">
+          <Input
+            label="ID do Usuário (opcional)"
+            value={idUsuarioEstorno}
+            onChange={(e) => setIdUsuarioEstorno(e.target.value)}
+            placeholder="Informe o ID do usuário responsável"
+          />
+        </div>
+        <p className="text-gray-700 text-sm">
+          Certifique-se de que todos os detalhes do estorno estão corretos antes de confirmar. Esta ação é irreversível.
         </p>
       </Modal>
 
@@ -564,3 +501,4 @@ const Transacoes = () => {
 };
 
 export default Transacoes;
+
