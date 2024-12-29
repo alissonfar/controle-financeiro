@@ -5,8 +5,10 @@ const pagamentosController = require('../controllers/pagamentosController');
 // Rotas relacionadas aos pagamentos
 router.post('/', pagamentosController.createPagamento);
 
-router.post('/:id/estornar', pagamentosController.estornarPagamento);
+// Rota de estorno utilizando o payload para identificação do pagamento
+router.post('/estornar', pagamentosController.estornarPagamento);
 
+// Rota para listar pagamentos
 router.get('/', pagamentosController.listarPagamentos);
 
 module.exports = router;
